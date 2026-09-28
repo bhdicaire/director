@@ -37,6 +37,8 @@ treat an emit as a tool call, not a turn.
   (ULID, path, PR) for a decision, open-item, or note; a handoff's four parts joined with ` · `
   are still one line. "One line" means no newlines and no scratch file, not a word cap: if a
   body wants a file, the rationale belongs in a doc the body points at (routing rule below).
+  Inside the double quotes, no backticks or `$( )`: the shell expands them before `director`
+  sees the body, so name a command in words rather than quoting it.
 - At each **natural boundary of work that will resume** (finishing a sub-task, switching focus,
   pausing, wrapping up mid-workstream), emit a `handoff`: **current task · next action ·
   hypotheses · dead ends**. This is the positional snapshot a fresh session (you, after
