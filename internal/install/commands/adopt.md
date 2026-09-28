@@ -22,7 +22,7 @@ You are running INFORMED ADOPTION for a repo — the current directory unless I 
 4. **Confirm with me — CHARTER first.** Show the proposal: against the stub on a first adopt, as a diff against the existing CHARTER on a re-run. Keep citations and `(inferred)` markers, then ask your open questions and WAIT. On my approval, edit the CHARTER file (the path from step 1) directly — it is a living doc, not the log. Never overwrite an edited CHARTER without this confirmation.
 
 5. **Confirm with me — open loops.** Present the in-flight items (typically 1–3) and the revive-or-abandon list, one recommendation each, deduped against the step-1 open-items (never re-import a loop the log already carries). WAIT, then emit ONLY what I confirm:
-   `director emit --type open-item --area <subsystem> [--risk escalate] "<loop> (source: <file:line or branch>)"`
+   `director emit --type open-item --area <subsystem> [--risk escalate] -` with `<loop> (source: <file:line or branch>)` on stdin as a quoted heredoc (`- <<'DIRECTOR_EOF'` … `DIRECTOR_EOF`), so nothing in the body expands.
    A "revive" decision becomes an open-item; "abandon" joins the fossils. Backlog, doc-stamp, and fossil items are NEVER imported — report their counts and where they live.
 
 6. **Report.** One summary, no silent drops: CHARTER written or left untouched; N open-item(s) emitted with their ULIDs; every bucket's count with its home ("backlog: 18, staying in plans/ and TODOS.md"); and, if the fan-out saw knowledge outside the repo (sibling worktree branches, workspace notes one level up), name what exists there that you did NOT analyze.

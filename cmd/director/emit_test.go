@@ -13,8 +13,10 @@ import (
 )
 
 // TestRunEmitRoutingEcho locks emit's two-stream contract. stdout carries the
-// bare ULID and nothing else — callers capture it, sometimes through command
-// substitution — while stderr carries the routing echo naming the project and
+// bare ULID and nothing else — callers read it from the command output; the
+// protocol forbids wrapping the call in command substitution, which bash 3.2
+// breaks on a heredoc body with an odd apostrophe count — while stderr carries
+// the routing echo naming the project and
 // workstream the event landed in, the line that makes a cwd-drift misroute
 // visible in the emitting session's transcript.
 func TestRunEmitRoutingEcho(t *testing.T) {
@@ -174,6 +176,84 @@ func emitCapture(t *testing.T, args ...string) (newID, stderr string) {
 		t.Fatalf("stdout = %q, want exactly one ULID line", stdout)
 	}
 	return strings.TrimSuffix(stdout, "\n"), errOut
+}
+
+// TestRunEmitBodyFromStdin: a "-" body reads stdin verbatim. That is the
+// transport the protocol prescribes (a quoted heredoc), so $VAR, backticks,
+// $( ) and quotes in a body never meet the shell; and an empty stdin is still
+// a missing body, not a silently empty event.
+func TestRunEmitBodyFromStdin(t *testing.T) {
+	emitRepo(t)
+	const body = "Cap at $500; ran `go test ./...`; Colin's $(echo no) \"quoted\" ${HOME}"
+	orig := os.Stdin
+	t.Cleanup(func() { os.Stdin = orig })
+
+	r, w := mustPipe(t)
+	if _, err := w.WriteString("\n" + body + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+	os.Stdin = r
+	id, _ := emitCapture(t, "--type", "note", "--area", "x", "-")
+	os.Stdin = orig
+
+	shown, _ := captureStreams(t, func() { runShow([]string{id}) })
+	if !strings.Contains(shown, body) {
+		t.Fatalf("show %s = %q, want the stdin body verbatim: %q", id, shown, body)
+	}
+
+	r, w = mustPipe(t)
+	w.Close()
+	os.Stdin = r
+	var code int
+	_, errOut := captureStreams(t, func() { code = runEmit([]string{"--type", "note", "-"}) })
+	if code != 2 || !strings.Contains(errOut, "body are required") {
+		t.Fatalf("empty stdin body: exit = %d, stderr = %q; want 2 and the missing-body error", code, errOut)
+	}
+
+	// Over the store's cap: refused at the read, one byte past the limit,
+	// so a runaway producer is never buffered whole.
+	r, w = mustPipe(t)
+	go func() {
+		defer w.Close()
+		chunk := strings.Repeat("x", 4096)
+		for i := 0; i < 64; i++ { // 256 KiB, four times the cap
+			if _, err := w.WriteString(chunk); err != nil {
+				return
+			}
+		}
+	}()
+	os.Stdin = r
+	_, errOut = captureStreams(t, func() { code = runEmit([]string{"--type", "note", "--area", "x", "-"}) })
+	if code != 2 || !strings.Contains(errOut, "exceeds") {
+		t.Fatalf("oversized stdin body: exit = %d, stderr = %q; want 2 and the size error", code, errOut)
+	}
+
+	// Exactly at the cap plus the newline a heredoc always appends: the cap
+	// is judged on the trimmed body, as the positional path judges it, so
+	// this lands.
+	r, w = mustPipe(t)
+	go func() { // past the pipe buffer, so the write must not wait on the read
+		defer w.Close()
+		_, _ = w.WriteString(strings.Repeat("y", 64*1024) + "\n")
+	}()
+	os.Stdin = r
+	emitCapture(t, "--type", "note", "--area", "x", "-")
+
+	// The sentinel is a lone "-": "- foo" is a literal positional body, and
+	// stdin is left unread.
+	r, w = mustPipe(t)
+	if _, err := w.WriteString("stdin must be ignored\n"); err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+	os.Stdin = r
+	id2, _ := emitCapture(t, "--type", "note", "--area", "x", "-", "foo")
+	os.Stdin = orig
+	shown, _ = captureStreams(t, func() { runShow([]string{id2}) })
+	if !strings.Contains(shown, "- foo") || strings.Contains(shown, "stdin must be ignored") {
+		t.Fatalf("show %s = %q, want the literal body %q with stdin untouched", id2, shown, "- foo")
+	}
 }
 
 // TestRunEmitHandoffWarningNeedsALivePosition is the warning's calibration: an

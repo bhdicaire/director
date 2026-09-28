@@ -411,10 +411,12 @@ SessionStart hook injects into every managed-repo session (its readable source i
 [`../skills/director/SKILL.md`](../skills/director/SKILL.md)). The protocol teaches two habits no hook can
 perform for the model:
 
-- **Continuous boundary-flush**: emit durable state *as work happens* (a `decision` the moment it's made,
-  an `open-item` the moment a loop is deferred, a `handoff` at each natural boundary: current task, next
+- **Continuous boundary-flush**: emit durable state *as work happens* (a `decision` in the turn it's made,
+  an `open-item` in the turn a loop is deferred, a `handoff` at each natural boundary: current task, next
   action, hypotheses, and the dead ends already tried), never batched for the end. Transient working state
-  survives a compaction only if it was written to the LOG during a turn.
+  survives a compaction only if it was written to the LOG during a turn. An emit rides along with the
+  next tool call, its body on stdin as a quoted heredoc, so the habit usually costs a tool call, not a
+  turn.
 - **Ground Truth**: treat the injected CHARTER + digest as authoritative: build on it, don't re-derive it
   by re-scanning the repo or re-reading the log.
 
