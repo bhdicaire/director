@@ -273,9 +273,9 @@ misc:
 
 ```bash
 director emit --type decision|open-item|handoff|note --area <subsystem> \
-  [--risk low|escalate] [--to <handle>] [--refs <ulid,ulid>] - <<'EOF'
+  [--risk low|escalate] [--to <handle>] [--refs <ulid,ulid>] - <<'DIRECTOR_EOF'
 <body>
-EOF
+DIRECTOR_EOF
 ```
 
 The `-` reads the body from stdin; the quoted heredoc keeps `$`, backticks and quotes literal, which a double-quoted argument does not. (A plain `<body>` argument is still accepted.)

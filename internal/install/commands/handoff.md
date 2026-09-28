@@ -12,9 +12,9 @@ You are checkpointing THIS session into Director (the coordination LOG) so a fre
 
 2. **Emit a SELF-SUFFICIENT handoff** — complete enough that a fresh session can continue from it ALONE:
    ```bash
-   director emit --type handoff --area <area> --refs <resume-point-ulid[,...]> - <<'EOF'
+   director emit --type handoff --area <area> --refs <resume-point-ulid[,...]> - <<'DIRECTOR_EOF'
    <current position> · <the next 3–5 concrete steps, in order> · <every gotcha / constraint / in-flight state> · <dead ends: tried X, failed because Y>
-   EOF
+   DIRECTOR_EOF
    ```
    Be thorough: PR / build / deploy state, branches, local-only commits, what's verified vs pending, any trap a fresh session must avoid — and the dead ends: paths already tried and abandoned, with why. Negative results are what stop the next session from re-walking them.
    `--refs` names every resume point of YOUR workstream you rehydrated from (the injected Ground Truth's **Resume point** section names them, ULID and all), plus any handoff YOU emitted earlier in this session: your handoff supersedes exactly the positions it names and nothing else (nothing older than them, nothing newer), so a parallel session's position that you never named survives instead of being silently overwritten. If the ground truth showed MORE than one un-consolidated position for this workstream, your body must consolidate ALL of them and `--refs` must name each — that is how the stack collapses back to one; a position you leave unnamed stays stacked in the digest until some later handoff names it. If the ground truth shows NO resume point for this workstream at all (this is its genuinely FIRST handoff), omit `--refs`: there is nothing to supersede, and a made-up or borrowed ULID is worse than none. Otherwise omitting `--refs` retires every older position of the workstream, including one a parallel session left that you never saw.

@@ -208,6 +208,24 @@ func TestRunEmitBodyFromStdin(t *testing.T) {
 	if code != 2 || !strings.Contains(errOut, "body are required") {
 		t.Fatalf("empty stdin body: exit = %d, stderr = %q; want 2 and the missing-body error", code, errOut)
 	}
+
+	// Over the store's cap: refused at the read, one byte past the limit,
+	// so a runaway producer is never buffered whole.
+	r, w = mustPipe(t)
+	go func() {
+		defer w.Close()
+		chunk := strings.Repeat("x", 4096)
+		for i := 0; i < 64; i++ { // 256 KiB, four times the cap
+			if _, err := w.WriteString(chunk); err != nil {
+				return
+			}
+		}
+	}()
+	os.Stdin = r
+	_, errOut = captureStreams(t, func() { code = runEmit([]string{"--type", "note", "--area", "x", "-"}) })
+	if code != 2 || !strings.Contains(errOut, "exceeds") {
+		t.Fatalf("oversized stdin body: exit = %d, stderr = %q; want 2 and the size error", code, errOut)
+	}
 }
 
 // TestRunEmitHandoffWarningNeedsALivePosition is the warning's calibration: an

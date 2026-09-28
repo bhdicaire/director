@@ -26,7 +26,7 @@ You are running the TERMINAL close-out for a workstream: its task is finished an
    Leave every genuine follow-up OPEN. Do not "tidy" them closed. The repo log is shared, so the next session on `main` inherits the still-open items automatically — they ARE the continuation, and need no handoff.
 
 5. **Emit a one-line completion summary** as a note (FYI for future / parallel sessions), naming the target workstream in the body — and **conclude its resume point**: pass `--refs <ULID of the target's NEWEST resume point>`. That ref retires that handoff and every older one of the workstream from the digest's resume points, so the dead workstream stops surfacing as resumable; the handoffs stay in the log, one `director show` away. Copy the ULID from the target's line in the `## handoffs` section of `director render` — if the target shows several stacked positions there, take the NEWEST: the conclusion mark is monotonic, so it retires the whole stack. If the target never emitted a handoff, omit `--refs`.
-   `director emit --type note --area <subsystem> --refs <handoff-ulid> -` with `<target-workstream> complete — <what shipped, e.g. PR #N merged>` on stdin as a quoted heredoc (`- <<'EOF'` … `EOF`).
+   `director emit --type note --area <subsystem> --refs <handoff-ulid> -` with `<target-workstream> complete — <what shipped, e.g. PR #N merged>` on stdin as a quoted heredoc (`- <<'DIRECTOR_EOF'` … `DIRECTOR_EOF`).
 
 6. **Archive the fleet row(s):**
    `director done`   (for a sibling: `director done --workstream <id>` — archives every row it left behind)

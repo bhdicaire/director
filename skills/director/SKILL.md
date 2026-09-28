@@ -30,6 +30,8 @@ treat an emit as a tool call, not a turn.
 - **Ride along, never stand alone.** Put the `director emit` in the same message as your next
   tool call, or as the last tool call of the turn when nothing else is left (an extra message
   beats a fact lost to compaction); several events go out as parallel calls in one message.
+  Ride along with independent calls only: never in parallel with a call that removes the
+  checkout or ends the session, since the emit may not have landed when that call runs.
   Every extra message re-reads the whole context, and that re-read, not the body, is what an
   emit costs (measured 2026-09: every emit took its own message plus a scratch-file Write for
   the body, roughly doubling the turns spent on the ledger).
@@ -39,13 +41,19 @@ treat an emit as a tool call, not a turn.
   Never draft the body in a scratch file first. Pass it on stdin as a quoted heredoc:
 
   ```bash
-  director emit --type decision --area store - <<'EOF'
+  director emit --type decision --area store - <<'DIRECTOR_EOF'
   Keep NDJSON append-only; the fold is the merge (see docs/specs/... §4). Rejected: SQLite.
-  EOF
+  DIRECTOR_EOF
   ```
 
   Inside a quoted heredoc nothing expands, so apostrophes, quotes, `$` and backticks are safe.
-  A double-quoted argument is not: the shell expands `$VAR`, backticks and `$( )` before
+  The delimiter is `DIRECTOR_EOF` rather than `EOF` because a body line that matches the
+  delimiter ends the heredoc early and hands the rest of the body to the shell as commands;
+  no body line reads `DIRECTOR_EOF`. Never wrap the call in `$( )` to capture the ULID: read
+  it from the command's output instead. Bash 3.2 (macOS `/bin/bash`, which the Claude Code
+  harness uses) scans the text inside `$( )` for quotes even within a quoted heredoc, so a
+  body with an odd number of apostrophes breaks the whole call. A double-quoted argument is
+  not safe either: the shell expands `$VAR`, backticks and `$( )` before
   `director` sees the body, and an embedded quote ends it early.
 - At each **natural boundary of work that will resume** (finishing a sub-task, switching focus,
   pausing, wrapping up mid-workstream), emit a `handoff`: **current task · next action ·
@@ -113,9 +121,9 @@ the full content.
 When you are blocked and need the human, emit an **`open-item` with `--risk escalate`**:
 
 ```bash
-director emit --type open-item --area deploy --risk escalate - <<'EOF'
+director emit --type open-item --area deploy --risk escalate - <<'DIRECTOR_EOF'
 Need prod DB creds to finish migration — cannot proceed
-EOF
+DIRECTOR_EOF
 ```
 
 The escalate-flagged open-set is exactly what surfaces in the cockpit's **Needs-you** band. Use

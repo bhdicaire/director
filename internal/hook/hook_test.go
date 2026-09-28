@@ -317,7 +317,7 @@ func TestSessionStartInjectsGroundTruth(t *testing.T) {
 		"same message as your next tool call",   // ride along
 		"last tool call of the turn",            // the end-of-turn tie-break
 		"never drafted in a scratch file first", // no Write turn for the body
-		"- <<'EOF'",                             // body on stdin, nothing expands
+		"- <<'DIRECTOR_EOF'",                    // body on stdin, nothing expands, delimiter no body line matches
 	} {
 		if !strings.Contains(ctx, want) {
 			t.Errorf("injected protocol should teach ride-along emits; missing %q:\n%s", want, ctx)

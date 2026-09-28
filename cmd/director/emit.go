@@ -32,10 +32,16 @@ func runEmit(args []string) int {
 	if body == "-" {
 		// Body on stdin, the protocol's transport: a quoted heredoc reaches
 		// here verbatim, where a double-quoted argument has already had
-		// $VAR, backticks and $( ) expanded by the shell.
-		raw, err := io.ReadAll(os.Stdin)
+		// $VAR, backticks and $( ) expanded by the shell. Read one byte past
+		// the store's cap so an oversized or endless producer is refused
+		// here instead of buffered whole and refused by validation later.
+		raw, err := io.ReadAll(io.LimitReader(os.Stdin, event.MaxBodyBytes+1))
 		if err != nil {
 			failf("emit: read body from stdin: %v\n", err)
+			return 2
+		}
+		if len(raw) > event.MaxBodyBytes {
+			failf("emit: stdin body exceeds %d bytes\n", event.MaxBodyBytes)
 			return 2
 		}
 		body = strings.TrimSpace(string(raw))
