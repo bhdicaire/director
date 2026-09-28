@@ -313,6 +313,9 @@ func TestSessionStartInjectsGroundTruth(t *testing.T) {
 	if !strings.Contains(ctx, "commitment to act") {
 		t.Errorf("injected protocol should clarify that emit RECORDS (not a commitment to act):\n%s", ctx)
 	}
+	if !strings.Contains(ctx, "same message as your next tool call") || !strings.Contains(ctx, "scratch file") {
+		t.Errorf("injected protocol should teach ride-along emits (same message as the next tool call, no scratch file):\n%s", ctx)
+	}
 	if !strings.Contains(ctx, "director resolve") {
 		t.Errorf("injected protocol should tell the model to resolve finished open-items:\n%s", ctx)
 	}
@@ -1682,8 +1685,8 @@ func TestSessionStartBudgetCollapsesAllWhenKeptBandOverflows(t *testing.T) {
 	store := event.NewStore(hub, ws.RepoKey)
 	// Bulk the ACTIONABLE section close to the budget so rung 1's ~2K-unit kept
 	// band (10 × ~200-unit decision index lines) still overflows while rung 2
-	// fits: ~16
-	// open-items × ~330-unit lines ≈ 5.3K units of open-set + ~4.0K units of
+	// fits: ~15
+	// open-items × ~330-unit lines ≈ 5.0K units of open-set + ~4.6K units of
 	// fixed blocks, against the 10,000-unit budget.
 	// (The fixture is ASCII, so units == bytes here.)
 	//
@@ -1691,9 +1694,10 @@ func TestSessionStartBudgetCollapsesAllWhenKeptBandOverflows(t *testing.T) {
 	// (emitProtocol, preamble, banner) grows, the FIXTURE has drifted out of
 	// its window — re-tune the open-item count downward; don't suspect the
 	// ladder. (Historical windows, for reference: 16,384-BYTE budget era of
-	// 2026-08-26 took 36 open-items, rung 2 ≈ 15,970B; 2026-07-15 took 38.)
+	// 2026-08-26 took 36 open-items, rung 2 ≈ 15,970B; 2026-07-15 took 38;
+	// 2026-09-28 took 16 before the ride-along emit rule grew emitProtocol.)
 	openBody := strings.Repeat("open loop ", 29) // ~290 chars, under the 300-rune cap
-	for i := 0; i < 16; i++ {
+	for i := 0; i < 15; i++ {
 		if _, err := event.Emit(store, ws.ID, event.EmitParams{Type: event.KindOpenItem, Area: "sync", Body: openBody}); err != nil {
 			t.Fatalf("seed open-item %d: %v", i, err)
 		}

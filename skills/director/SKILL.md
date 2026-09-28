@@ -21,16 +21,27 @@ it for you. The habit below is the real guarantee against lost context — treat
 
 ## 1. Continuous boundary-flush (the load-bearing habit)
 
-Emit durable state to the LOG **as you work** — do not batch it for the end of the session.
+Emit durable state to the LOG **as you work** — do not batch it for the end of the session — and
+treat an emit as a tool call, not a turn.
 
-- The **moment** a decision is made or a follow-up is deferred, emit it. Right then, not later.
-  An item written immediately survives an unexpected compaction; an item you were "going to log
-  at the end" is exactly what gets lost.
+- Emit a decision or a deferred follow-up **in the turn it arises**. An item written that turn
+  survives an unexpected compaction; an item you were "going to log at the end" is exactly what
+  gets lost.
+- **Ride along, never stand alone.** Put the `director emit` in the same message as your next
+  tool call, or as the last tool call of the turn when nothing else is left (an extra message
+  beats a fact lost to compaction); several events go out as parallel calls in one message.
+  Every extra message re-reads the whole context, and that re-read, not the body, is what an
+  emit costs (measured 2026-09: every emit took its own message plus a scratch-file Write for
+  the body, roughly doubling the turns spent on the ledger).
+- **One line per body**, inlined in the command in double quotes: a headline plus a pointer
+  (ULID, path, PR) for a decision, open-item, or note; a handoff's four parts joined with ` · `
+  are still one line. "One line" means no newlines and no scratch file, not a word cap: if a
+  body wants a file, the rationale belongs in a doc the body points at (routing rule below).
 - At each **natural boundary of work that will resume** (finishing a sub-task, switching focus,
   pausing, wrapping up mid-workstream), emit a `handoff`: **current task · next action ·
   hypotheses · dead ends**. This is the positional snapshot a fresh session (you, after
   compaction, or a peer) reads to pick up where you left off.
-  Dead ends ride along ("tried X, failed because Y") — negative results are what stop the next
+  Dead ends go in the body ("tried X, failed because Y") — negative results are what stop the next
   session from re-walking a path this one already burned.
 - A deferred loop is its **own `open-item` event** — do **not** pack it into the handoff body.
   The handoff carries *position*; open-items carry *carried-forward loops*. `brief`/`render`

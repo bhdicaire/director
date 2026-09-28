@@ -334,7 +334,7 @@ There are exactly four model-emitted semantic kinds. Pick by what the fact *is*:
 
 The SessionStart hook injects this protocol into every managed-repo session, so the emit habit is in context from turn one: pushed as injected state, not shipped as a lazy model-invoked skill, because an always-on habit only fires if it is already in the window. (`skills/director/SKILL.md` is the readable source of the same text.) It teaches a session two load-bearing habits that no hook can perform for it:
 
-- **Continuous boundary-flush**: emit durable state to the LOG *as you work* (the moment a decision is made or a loop is deferred, and a `handoff` at each natural boundary), never batched for the end of a session. Transient working state survives a compaction only if the model wrote it to the LOG during a turn.
+- **Continuous boundary-flush**: emit durable state to the LOG *as you work* (in the turn a decision is made or a loop is deferred, and a `handoff` at each natural boundary), never batched for the end of a session. Transient working state survives a compaction only if the model wrote it to the LOG during a turn. An emit rides along with the session's next tool call, one line per body, so the habit costs a tool call and not a turn.
 - **Ground Truth**: treat the CHARTER + digest injected at session start as the *authoritative current picture*: build on it, do not re-derive it by re-scanning the repo or re-reading the log.
 
 ## Identity
