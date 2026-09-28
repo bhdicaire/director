@@ -1693,8 +1693,10 @@ func TestSessionStartBudgetCollapsesAllWhenKeptBandOverflows(t *testing.T) {
 	// Bulk the ACTIONABLE section close to the budget so rung 1's ~2K-unit kept
 	// band (10 × ~200-unit decision index lines) still overflows while rung 2
 	// fits: ~14
-	// open-items × ~330-unit lines ≈ 4.6K units of open-set + ~4.9K units of
-	// fixed blocks, against the 10,000-unit budget.
+	// open-items × ~330-unit lines ≈ 4.6K units of open-set + ~5.2K units of
+	// fixed blocks, against the 10,000-unit budget. Measured at the 2026-09-28
+	// retune: rung-2 payload 9,815 units, so under 200 units of headroom; the
+	// next fixed-block sentence trips this test, which is the intended tripwire.
 	// (The fixture is ASCII, so units == bytes here.)
 	//
 	// If this test starts failing with "STILL over budget" after a fixed block

@@ -29,22 +29,25 @@ func runEmit(args []string) int {
 		return 2
 	}
 	body := strings.TrimSpace(strings.Join(fs.Args(), " "))
-	if body == "-" {
-		// Body on stdin, the protocol's transport: a quoted heredoc reaches
-		// here verbatim, where a double-quoted argument has already had
-		// $VAR, backticks and $( ) expanded by the shell. Read one byte past
-		// the store's cap so an oversized or endless producer is refused
-		// here instead of buffered whole and refused by validation later.
+	if pos := fs.Args(); len(pos) == 1 && pos[0] == "-" {
+		// A lone "-" is the reserved stdin sentinel, matched structurally so
+		// "- foo" stays a literal positional body. Stdin is the protocol's
+		// transport: a quoted heredoc reaches here verbatim, where a
+		// double-quoted argument has already had $VAR, backticks and $( )
+		// expanded by the shell. The read stops one byte past the store's
+		// cap so an endless producer is never buffered whole; the cap itself
+		// is judged on the trimmed body, exactly as the positional path is,
+		// so a heredoc's trailing newline does not shrink it.
 		raw, err := io.ReadAll(io.LimitReader(os.Stdin, event.MaxBodyBytes+1))
 		if err != nil {
 			failf("emit: read body from stdin: %v\n", err)
 			return 2
 		}
-		if len(raw) > event.MaxBodyBytes {
+		body = strings.TrimSpace(string(raw))
+		if len(body) > event.MaxBodyBytes {
 			failf("emit: stdin body exceeds %d bytes\n", event.MaxBodyBytes)
 			return 2
 		}
-		body = strings.TrimSpace(string(raw))
 	}
 	if typ == "" || body == "" {
 		failf("emit: --type and a body are required\n")
@@ -75,8 +78,10 @@ func runEmit(args []string) int {
 		failf("emit: %v\n", err)
 		return 1
 	}
-	// stdout stays the bare ULID and nothing else: callers capture it, sometimes
-	// through command substitution. The routing echo therefore goes to stderr,
+	// stdout stays the bare ULID and nothing else: callers read it from the
+	// command output (the protocol forbids wrapping the call in command
+	// substitution, which bash 3.2 breaks on a heredoc body with an odd
+	// apostrophe count). The routing echo therefore goes to stderr,
 	// naming the project and workstream the event actually landed in so a session
 	// whose cwd drifted sees the misroute in its own transcript.
 	fmt.Println(ev.ID)

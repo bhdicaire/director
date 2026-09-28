@@ -278,7 +278,7 @@ director emit --type decision|open-item|handoff|note --area <subsystem> \
 DIRECTOR_EOF
 ```
 
-The `-` reads the body from stdin; the quoted heredoc keeps `$`, backticks and quotes literal, which a double-quoted argument does not. (A plain `<body>` argument is still accepted.)
+The `-` reads the body from stdin; the quoted heredoc keeps `$`, backticks and quotes literal, which a double-quoted argument does not. (A plain `<body>` argument is still accepted; a body that is exactly `-` is reserved for stdin.)
 
 `emit` prints the **new event's ULID to stdout**: note it; that is the id used to `--refs` or `resolve` the event later. (Three `--refs` pairings are load-bearing: a `note` ref naming a **handoff** concludes it, a `handoff` ref naming same-workstream **handoff(s)** supersedes exactly those resume points and no others, and a `decision` ref naming **decision(s)** supersedes them, retiring them from the digest's active decisions — see the kind table's lifecycle column below.)
 
