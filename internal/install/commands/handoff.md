@@ -5,11 +5,17 @@ description: Checkpoint this session into Director — flush pending decisions/o
 You are checkpointing THIS session into Director (the coordination LOG) so a fresh session — you after a compaction, or a peer — can pick up exactly where you left off. The next session rehydrates from Director's injected Ground Truth (CHARTER + open-items + this workstream's resume point(s) + a decision index); anything not in the LOG is lost. If this workstream is actually FINISHED and merged, stop and run `/director:complete` instead — a done workstream needs a close-out, not a resume point. This checkpoint is also the right move when THIS session has degraded (the human is repeating a correction, or the context has visibly rotted): hand off first, then let the human `/clear` — a fresh session resuming from distilled state beats pushing a rotten context forward. Regenerate, don't recover. Otherwise do this now, in order:
 
 1. **Flush this session's durable items** — emit each as its own event, capturing everything not already in the LOG (do not assume earlier turns emitted them):
-   - every decision made → `director emit --type decision --area <area> "<what + the why>"`
-   - every open loop / deferred follow-up → `director emit --type open-item --area <area> --risk <low|escalate> "<the loop>"` (use `escalate` ONLY when it needs the human)
+   - every decision made → `director emit --type decision --area <area> -` with `<what + the why>` on stdin
+   - every open loop / deferred follow-up → `director emit --type open-item --area <area> --risk <low|escalate> -` with `<the loop>` on stdin (use `escalate` ONLY when it needs the human)
+
+   Every body goes on stdin as a quoted heredoc (the `-`), never in a double-quoted argument and never drafted in a file first: inside the heredoc nothing expands, so the apostrophes, quotes, `$` and backticks a dead-ends section is full of stay literal. Several events go out as parallel calls in one message.
 
 2. **Emit a SELF-SUFFICIENT handoff** — complete enough that a fresh session can continue from it ALONE:
-   `director emit --type handoff --area <area> --refs <resume-point-ulid[,...]> "<current position> · <the next 3–5 concrete steps, in order> · <every gotcha / constraint / in-flight state> · <dead ends: tried X, failed because Y>"`
+   ```bash
+   director emit --type handoff --area <area> --refs <resume-point-ulid[,...]> - <<'EOF'
+   <current position> · <the next 3–5 concrete steps, in order> · <every gotcha / constraint / in-flight state> · <dead ends: tried X, failed because Y>
+   EOF
+   ```
    Be thorough: PR / build / deploy state, branches, local-only commits, what's verified vs pending, any trap a fresh session must avoid — and the dead ends: paths already tried and abandoned, with why. Negative results are what stop the next session from re-walking them.
    `--refs` names every resume point of YOUR workstream you rehydrated from (the injected Ground Truth's **Resume point** section names them, ULID and all), plus any handoff YOU emitted earlier in this session: your handoff supersedes exactly the positions it names and nothing else (nothing older than them, nothing newer), so a parallel session's position that you never named survives instead of being silently overwritten. If the ground truth showed MORE than one un-consolidated position for this workstream, your body must consolidate ALL of them and `--refs` must name each — that is how the stack collapses back to one; a position you leave unnamed stays stacked in the digest until some later handoff names it. If the ground truth shows NO resume point for this workstream at all (this is its genuinely FIRST handoff), omit `--refs`: there is nothing to supersede, and a made-up or borrowed ULID is worse than none. Otherwise omitting `--refs` retires every older position of the workstream, including one a parallel session left that you never saw.
 

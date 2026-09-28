@@ -176,6 +176,40 @@ func emitCapture(t *testing.T, args ...string) (newID, stderr string) {
 	return strings.TrimSuffix(stdout, "\n"), errOut
 }
 
+// TestRunEmitBodyFromStdin: a "-" body reads stdin verbatim. That is the
+// transport the protocol prescribes (a quoted heredoc), so $VAR, backticks,
+// $( ) and quotes in a body never meet the shell; and an empty stdin is still
+// a missing body, not a silently empty event.
+func TestRunEmitBodyFromStdin(t *testing.T) {
+	emitRepo(t)
+	const body = "Cap at $500; ran `go test ./...`; Colin's $(echo no) \"quoted\" ${HOME}"
+	orig := os.Stdin
+	t.Cleanup(func() { os.Stdin = orig })
+
+	r, w := mustPipe(t)
+	if _, err := w.WriteString("\n" + body + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+	os.Stdin = r
+	id, _ := emitCapture(t, "--type", "note", "--area", "x", "-")
+	os.Stdin = orig
+
+	shown, _ := captureStreams(t, func() { runShow([]string{id}) })
+	if !strings.Contains(shown, body) {
+		t.Fatalf("show %s = %q, want the stdin body verbatim: %q", id, shown, body)
+	}
+
+	r, w = mustPipe(t)
+	w.Close()
+	os.Stdin = r
+	var code int
+	_, errOut := captureStreams(t, func() { code = runEmit([]string{"--type", "note", "-"}) })
+	if code != 2 || !strings.Contains(errOut, "body are required") {
+		t.Fatalf("empty stdin body: exit = %d, stderr = %q; want 2 and the missing-body error", code, errOut)
+	}
+}
+
 // TestRunEmitHandoffWarningNeedsALivePosition is the warning's calibration: an
 // implicit handoff is warned only when the fold actually had something live to
 // lose. The classification is the fold's own answer over the log as it stood

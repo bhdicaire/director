@@ -33,12 +33,20 @@ treat an emit as a tool call, not a turn.
   Every extra message re-reads the whole context, and that re-read, not the body, is what an
   emit costs (measured 2026-09: every emit took its own message plus a scratch-file Write for
   the body, roughly doubling the turns spent on the ledger).
-- **One line per body**, inlined in the command in double quotes: a headline plus a pointer
-  (ULID, path, PR) for a decision, open-item, or note; a handoff's four parts joined with ` · `
-  are still one line. "One line" means no newlines and no scratch file, not a word cap: if a
+- **Terse body, on stdin.** A headline plus a pointer (ULID, path, PR) for a decision,
+  open-item, or note; a handoff's four parts joined with ` · `. Terse is not a word cap: if a
   body wants a file, the rationale belongs in a doc the body points at (routing rule below).
-  Inside the double quotes, no backticks or `$( )`: the shell expands them before `director`
-  sees the body, so name a command in words rather than quoting it.
+  Never draft the body in a scratch file first. Pass it on stdin as a quoted heredoc:
+
+  ```bash
+  director emit --type decision --area store - <<'EOF'
+  Keep NDJSON append-only; the fold is the merge (see docs/specs/... §4). Rejected: SQLite.
+  EOF
+  ```
+
+  Inside a quoted heredoc nothing expands, so apostrophes, quotes, `$` and backticks are safe.
+  A double-quoted argument is not: the shell expands `$VAR`, backticks and `$( )` before
+  `director` sees the body, and an embedded quote ends it early.
 - At each **natural boundary of work that will resume** (finishing a sub-task, switching focus,
   pausing, wrapping up mid-workstream), emit a `handoff`: **current task · next action ·
   hypotheses · dead ends**. This is the positional snapshot a fresh session (you, after
@@ -61,12 +69,15 @@ need to hand-compose a big handoff at the last second.
 
 There are exactly four model-emitted kinds. Pick by what the fact *is*:
 
+The `-` in each example reads the body from stdin (a quoted heredoc, §1); the second span is
+the body.
+
 | Kind | Use it for | Example |
 |---|---|---|
-| `decision` | a choice + what it affects (carries `--risk low\|escalate`) | `director emit --type decision --area auth --risk low "Use ULID not UUID for event ids — sortable, matches log fold"` |
-| `open-item` | an open loop / follow-up / deferred item — the canonical home for "documented, not dropped" | `director emit --type open-item --area render "Resolve cross-machine ULID tie-break before multi-machine sync"` |
-| `handoff` | current task · next action · hypotheses · dead ends (positional snapshot at a boundary) | `director emit --type handoff --area store --refs <the resume point ULID(s) you rehydrated from> "Done: NDJSON append. Next: wire emit dispatch. Hypothesis: O_APPEND is line-atomic on POSIX. Dead end: fsync-per-line, 30x too slow"` |
-| `note` | FYI / context for a parallel or future session; a finished task's outcome (a review verdict, an investigation result) | `director emit --type note --to @next-on-hooks --area hooks "settings.json merge is _managedBy-tagged — don't strip GSD entries"` |
+| `decision` | a choice + what it affects (carries `--risk low\|escalate`) | `director emit --type decision --area auth --risk low -` + `Use ULID not UUID for event ids — sortable, matches log fold` |
+| `open-item` | an open loop / follow-up / deferred item — the canonical home for "documented, not dropped" | `director emit --type open-item --area render -` + `Resolve cross-machine ULID tie-break before multi-machine sync` |
+| `handoff` | current task · next action · hypotheses · dead ends (positional snapshot at a boundary) | `director emit --type handoff --area store --refs <the resume point ULID(s) you rehydrated from> -` + `Done: NDJSON append. Next: wire emit dispatch. Hypothesis: O_APPEND is line-atomic on POSIX. Dead end: fsync-per-line, 30x too slow` |
+| `note` | FYI / context for a parallel or future session; a finished task's outcome (a review verdict, an investigation result) | `director emit --type note --to @next-on-hooks --area hooks -` + `settings.json merge is _managedBy-tagged — don't strip GSD entries` |
 
 Three **reserved ref meanings**, all load-bearing:
 
@@ -101,8 +112,10 @@ the full content.
 
 When you are blocked and need the human, emit an **`open-item` with `--risk escalate`**:
 
-```
-director emit --type open-item --area deploy --risk escalate "Need prod DB creds to finish migration — cannot proceed"
+```bash
+director emit --type open-item --area deploy --risk escalate - <<'EOF'
+Need prod DB creds to finish migration — cannot proceed
+EOF
 ```
 
 The escalate-flagged open-set is exactly what surfaces in the cockpit's **Needs-you** band. Use

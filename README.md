@@ -273,8 +273,12 @@ misc:
 
 ```bash
 director emit --type decision|open-item|handoff|note --area <subsystem> \
-  [--risk low|escalate] [--to <handle>] [--refs <ulid,ulid>] <body>
+  [--risk low|escalate] [--to <handle>] [--refs <ulid,ulid>] - <<'EOF'
+<body>
+EOF
 ```
+
+The `-` reads the body from stdin; the quoted heredoc keeps `$`, backticks and quotes literal, which a double-quoted argument does not. (A plain `<body>` argument is still accepted.)
 
 `emit` prints the **new event's ULID to stdout**: note it; that is the id used to `--refs` or `resolve` the event later. (Three `--refs` pairings are load-bearing: a `note` ref naming a **handoff** concludes it, a `handoff` ref naming same-workstream **handoff(s)** supersedes exactly those resume points and no others, and a `decision` ref naming **decision(s)** supersedes them, retiring them from the digest's active decisions — see the kind table's lifecycle column below.)
 
@@ -334,7 +338,7 @@ There are exactly four model-emitted semantic kinds. Pick by what the fact *is*:
 
 The SessionStart hook injects this protocol into every managed-repo session, so the emit habit is in context from turn one: pushed as injected state, not shipped as a lazy model-invoked skill, because an always-on habit only fires if it is already in the window. (`skills/director/SKILL.md` is the readable source of the same text.) It teaches a session two load-bearing habits that no hook can perform for it:
 
-- **Continuous boundary-flush**: emit durable state to the LOG *as you work* (in the turn a decision is made or a loop is deferred, and a `handoff` at each natural boundary), never batched for the end of a session. Transient working state survives a compaction only if the model wrote it to the LOG during a turn. An emit rides along with the session's next tool call, one line per body, so the habit costs a tool call and not a turn.
+- **Continuous boundary-flush**: emit durable state to the LOG *as you work* (in the turn a decision is made or a loop is deferred, and a `handoff` at each natural boundary), never batched for the end of a session. Transient working state survives a compaction only if the model wrote it to the LOG during a turn. An emit rides along with the session's next tool call, its body on stdin as a quoted heredoc, so the habit usually costs a tool call, not a turn.
 - **Ground Truth**: treat the CHARTER + digest injected at session start as the *authoritative current picture*: build on it, do not re-derive it by re-scanning the repo or re-reading the log.
 
 ## Identity

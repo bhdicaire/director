@@ -415,7 +415,8 @@ perform for the model:
   an `open-item` in the turn a loop is deferred, a `handoff` at each natural boundary: current task, next
   action, hypotheses, and the dead ends already tried), never batched for the end. Transient working state
   survives a compaction only if it was written to the LOG during a turn. An emit rides along with the
-  next tool call, one line per body, so the habit costs a tool call and not a turn.
+  next tool call, its body on stdin as a quoted heredoc, so the habit usually costs a tool call, not a
+  turn.
 - **Ground Truth**: treat the injected CHARTER + digest as authoritative: build on it, don't re-derive it
   by re-scanning the repo or re-reading the log.
 

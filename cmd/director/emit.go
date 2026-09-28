@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -28,6 +29,17 @@ func runEmit(args []string) int {
 		return 2
 	}
 	body := strings.TrimSpace(strings.Join(fs.Args(), " "))
+	if body == "-" {
+		// Body on stdin, the protocol's transport: a quoted heredoc reaches
+		// here verbatim, where a double-quoted argument has already had
+		// $VAR, backticks and $( ) expanded by the shell.
+		raw, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			failf("emit: read body from stdin: %v\n", err)
+			return 2
+		}
+		body = strings.TrimSpace(string(raw))
+	}
 	if typ == "" || body == "" {
 		failf("emit: --type and a body are required\n")
 		return 2
