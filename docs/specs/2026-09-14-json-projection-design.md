@@ -151,6 +151,27 @@ unprojected type and 1 for an invariant violation.
   lifecycle value does bump it. A consumer branching on lifecycle must be able to rely
   on the table above being closed for the version it checked.
 
+## Exit status
+
+The codes are the CLI's existing ones; this table says what produces each for the JSON
+outputs. Whenever either command exits non-zero with `--json`, stdout is empty and
+stderr names the cause.
+
+| Cause | `render --json` | `show --json` |
+|---|---|---|
+| Success | 0 | 0 |
+| No event with that ULID in the project | n/a | 1 |
+| The log cannot be read or parsed, or the project cannot be resolved | 1 | 1 |
+| The event's type is not projected | n/a | 1 |
+| Invariant violation (see the lifecycle section) | n/a | 1 |
+| `--verify` finds the re-fold differs | 1 | n/a |
+| Usage: an unknown flag, a `--project` that is not a repo-key, positional arguments (`render`), or anything but exactly one well-formed ULID (`show`) | 2 | 2 |
+
+`render` still writes its manifest as before; a manifest write failure is reported on
+stderr and does not change the exit code. Text `show` differs from `show --json` in
+two rows: an unprojected type prints the record and exits 0, and an invariant
+violation prints the record and exits 1.
+
 ## Determinism and compatibility
 
 `render --verify --json` re-folds a reversed copy of the same event set and compares
