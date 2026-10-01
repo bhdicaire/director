@@ -311,6 +311,33 @@ func TestLifecycleOfRejectsWhatTheFoldCannotPlace(t *testing.T) {
 	}
 }
 
+// Retired is keyed by id alone, so an id reused across kinds can hand an event
+// another kind's verb. Here the open-item and the decision share x; a close-marker
+// retires the open-item, but the lower-ULID superseding decision stands as x's
+// retirer, so the open-item would read "superseded", a word only decisions and
+// handoffs have. That is an error, and the decision (which is superseded)
+// still resolves.
+func TestLifecycleOfRejectsAVerbOutsideTheKindsVocabulary(t *testing.T) {
+	x, superseder, closer := mint(t), mint(t), mint(t)
+	item := event.Event{ID: x, SchemaVersion: event.SchemaVersion, Type: event.KindOpenItem, Status: event.StatusOpen, Workstream: "w", Body: "item"}
+	decision := event.Event{ID: x, SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "w", Body: "decision"}
+	proj := Fold([]event.Event{
+		item, decision,
+		{ID: superseder, SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "w", Refs: []string{x}, Body: "supersedes"},
+		{ID: closer, SchemaVersion: event.SchemaVersion, Type: event.KindOpenItem, Status: event.StatusClosed, Workstream: "w", Refs: []string{x}, Body: "closed"},
+	})
+	if got := proj.Retired[x]; got.Verb != VerbSuperseded || got.By != superseder {
+		t.Fatalf("fixture: Retired[x] = %+v, want superseded by the lower ULID", got)
+	}
+
+	if lc, err := LifecycleOf(proj, item); err == nil {
+		t.Errorf("open-item lifecycle = %+v, want an error", lc)
+	}
+	if lc, err := LifecycleOf(proj, decision); err != nil || lc.State != VerbSuperseded {
+		t.Errorf("decision lifecycle = %+v, %v, want superseded", lc, err)
+	}
+}
+
 // The envelope collections are [] when empty, but the nested event is the
 // durable record and keeps the event schema's optional-field rules: a ref-less
 // event has no refs key at all, one with refs carries them.

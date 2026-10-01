@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/colinsurprenant/director/internal/event"
 )
@@ -17,6 +18,23 @@ const (
 	StateRecorded         = "recorded"          // note: the fold never retires one
 	StateResolutionMarker = "resolution-marker" // a close-marker: in no set, never retired
 )
+
+// vocabulary is the per-kind set of lifecycle values: the live states plus the
+// retirement verbs that apply to the kind. It is the one table the spec's
+// lifecycle table and the tests are held to, and LifecycleOf refuses to return
+// a value outside its kind's row.
+var vocabulary = map[event.Kind][]string{
+	event.KindDecision: {StateActive, VerbSuperseded, VerbPromoted},
+	event.KindOpenItem: {StateOpen, VerbClosed, StateResolutionMarker},
+	event.KindHandoff:  {StateResumable, VerbConcluded, VerbSuperseded},
+	event.KindNote:     {StateRecorded},
+}
+
+// Vocabulary returns every lifecycle value LifecycleOf can return for events of
+// the given kind, and nil for a kind the fold does not project.
+func Vocabulary(kind event.Kind) []string {
+	return slices.Clone(vocabulary[kind])
+}
 
 // Lifecycle is where one event stands in a Projection.
 type Lifecycle struct {
@@ -58,13 +76,21 @@ func LifecycleOf(proj Projection, ev event.Event) (Lifecycle, error) {
 	default:
 		return Lifecycle{}, fmt.Errorf("render: event %s has type %q, which the fold does not project", ev.ID, ev.Type)
 	}
-	if live != "" {
-		return Lifecycle{State: live}, nil
+	lc := Lifecycle{State: live}
+	if live == "" {
+		r, ok := proj.Retired[ev.ID]
+		if !ok {
+			return Lifecycle{}, fmt.Errorf("render: %s %s is in none of the projection's live sets and has no retirement entry", ev.Type, ev.ID)
+		}
+		lc = Lifecycle{State: r.Verb, Retirement: r}
 	}
-	if r, ok := proj.Retired[ev.ID]; ok {
-		return Lifecycle{State: r.Verb, Retirement: r}, nil
+	// Retired is keyed by id alone, so an id reused across kinds can hand an
+	// event another kind's verb (an open-item reported superseded). That is
+	// the fold and the log disagreeing, not a label to pass along.
+	if !slices.Contains(vocabulary[ev.Type], lc.State) {
+		return Lifecycle{}, fmt.Errorf("render: %s %s is %q, which is not a lifecycle of that kind (an id reused across kinds?)", ev.Type, ev.ID, lc.State)
 	}
-	return Lifecycle{}, fmt.Errorf("render: %s %s is in none of the projection's live sets and has no retirement entry", ev.Type, ev.ID)
+	return lc, nil
 }
 
 func containsEvent(events []event.Event, id string) bool {

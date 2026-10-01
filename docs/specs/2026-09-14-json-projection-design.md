@@ -126,9 +126,10 @@ lowest-ULID retirer and the lifecycle follows it:
   `promoted` when the marker's ULID is lower and `superseded` when the Decision's is.
 
 The answer is a function of the event set, not of the order the rules are applied in.
-An event the projection can neither place nor trace to a retirement is an internal
-invariant violation: `show --json` reports it as an error (exit 1) rather than
-emitting a default value.
+An event the projection can neither place nor trace to a retirement, or whose
+retirement verb is not in its own kind's row of the table above (an id reused across
+kinds), is an internal invariant violation: `show --json` reports it as an error
+(exit 1) rather than emitting a default value.
 
 ## Versioning
 

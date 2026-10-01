@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/colinsurprenant/director/internal/event"
+	"github.com/colinsurprenant/director/internal/render"
 )
 
 // TestSpecLifecycleTableMatchesTheVocabulary keeps the spec's table honest: it
@@ -42,7 +43,7 @@ func TestSpecLifecycleTableMatchesTheVocabulary(t *testing.T) {
 		for _, m := range value.FindAllStringSubmatch(cells[2], -1) {
 			got = append(got, m[1])
 		}
-		want := append([]string(nil), lifecycleVocabulary[kind]...)
+		want := render.Vocabulary(kind)
 		sort.Strings(got)
 		sort.Strings(want)
 		if strings.Join(got, ",") != strings.Join(want, ",") {

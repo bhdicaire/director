@@ -13,16 +13,9 @@ import (
 	"github.com/colinsurprenant/director/internal/render"
 )
 
-// lifecycleVocabulary is the complete set of lifecycle strings, per kind, that
-// `show` and the JSON projections may emit: the live states plus the fold's
-// retirement verbs that apply to the kind. The agreement test below holds the
-// code to it from both sides, and the spec table is held to the same list.
-var lifecycleVocabulary = map[event.Kind][]string{
-	event.KindDecision: {render.StateActive, render.VerbSuperseded, render.VerbPromoted},
-	event.KindOpenItem: {render.StateOpen, render.VerbClosed, render.StateResolutionMarker},
-	event.KindHandoff:  {render.StateResumable, render.VerbConcluded, render.VerbSuperseded},
-	event.KindNote:     {render.StateRecorded},
-}
+// allKinds is every event kind the fold projects; render.Vocabulary is the
+// production table of lifecycle values for each.
+var allKinds = []event.Kind{event.KindDecision, event.KindOpenItem, event.KindHandoff, event.KindNote}
 
 // generateLog appends a seeded random log, valid by the store's own rules, that
 // leans on every path the fold retires by: supersession and promotion of
@@ -153,7 +146,7 @@ var lifecycleLine = regexp.MustCompile(`(?m)^lifecycle: (\S+) by (\S+)(?: to (.+
 // and that every value stays inside the documented vocabulary.
 func TestLifecycleAgreement(t *testing.T) {
 	seen := make(map[event.Kind]map[string]bool)
-	for kind := range lifecycleVocabulary {
+	for _, kind := range allKinds {
 		seen[kind] = make(map[string]bool)
 	}
 	for seed := int64(1); seed <= 12; seed++ {
@@ -199,16 +192,16 @@ func TestLifecycleAgreement(t *testing.T) {
 		}
 	}
 
-	for kind, want := range lifecycleVocabulary {
+	for _, kind := range allKinds {
 		var got []string
 		for state := range seen[kind] {
 			got = append(got, state)
 		}
 		sort.Strings(got)
-		want = append([]string(nil), want...)
+		want := render.Vocabulary(kind)
 		sort.Strings(want)
 		if strings.Join(got, ",") != strings.Join(want, ",") {
-			t.Errorf("%s lifecycle values over the generated logs = %v, documented vocabulary = %v", kind, got, want)
+			t.Errorf("%s lifecycle values over the generated logs = %v, vocabulary = %v", kind, got, want)
 		}
 	}
 }
