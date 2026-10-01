@@ -151,6 +151,12 @@ unprojected type and 1 for an invariant violation.
   lifecycle value does bump it. A consumer branching on lifecycle must be able to rely
   on the table above being closed for the version it checked.
 
+The nested `event` is this binary's reading of the record, not a copy of the log line.
+It is parsed and re-serialized through this binary's event schema, so a field this
+build does not know is dropped, and its `lifecycle` comes from this binary's fold
+rules. The nested `schema_version` is the record's own, exactly as written in the log.
+A consumer that needs the line as stored reads the log.
+
 ## Exit status
 
 The codes are the CLI's existing ones; this table says what produces each for the JSON
