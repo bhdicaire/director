@@ -54,15 +54,22 @@ func runRender(args []string) int {
 		return 1
 	}
 	proj := render.Fold(events)
-	var output []byte
-	if jsonOutput {
-		output, err = render.ProjectionJSON(proj, repoKey)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "render: encode JSON: %v\n", err)
-			return 1
+	// One encoder serves the printed output and the --verify re-fold, so the
+	// JSON-or-text choice is made once.
+	encode := func(p render.Projection) ([]byte, error) {
+		if !jsonOutput {
+			return []byte(render.Digest(p, repoKey)), nil
 		}
-	} else {
-		output = []byte(render.Digest(proj, repoKey))
+		out, err := render.ProjectionJSON(p, repoKey)
+		if err != nil {
+			return nil, fmt.Errorf("encode JSON: %w", err)
+		}
+		return out, nil
+	}
+	output, err := encode(proj)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "render: %v\n", err)
+		return 1
 	}
 
 	if verify {
@@ -76,14 +83,9 @@ func runRender(args []string) int {
 		for i, ev := range events {
 			reordered[len(events)-1-i] = ev
 		}
-		var got []byte
-		if jsonOutput {
-			got, err = render.ProjectionJSON(render.Fold(reordered), repoKey)
-		} else {
-			got = []byte(render.Digest(render.Fold(reordered), repoKey))
-		}
+		got, err := encode(render.Fold(reordered))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "render: --verify: encode JSON: %v\n", err)
+			fmt.Fprintf(os.Stderr, "render: --verify: %v\n", err)
 			return 1
 		}
 		if !bytes.Equal(got, output) {
