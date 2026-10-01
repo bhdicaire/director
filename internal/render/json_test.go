@@ -123,6 +123,16 @@ func TestShowJSONLifecycle(t *testing.T) {
 		explicitlySuperseded: "superseded",
 		explicitSuccessor:    "resumable",
 	}
+	// Who retired each retired event; a live one has no entry here and no
+	// retired_by key at all.
+	retiredBy := map[string]string{
+		promoted:             promoteMarker,
+		superseded:           successor,
+		closed:               closeMarker,
+		implicitlySuperseded: resumable, // no ref to follow: the next implicit handoff
+		concluded:            concludingNote,
+		explicitlySuperseded: explicitSuccessor,
+	}
 	for _, target := range events {
 		data, err := ShowJSON(proj, "widget", target)
 		if err != nil {
@@ -134,6 +144,29 @@ func TestShowJSONLifecycle(t *testing.T) {
 		}
 		if got.Record.Lifecycle != wants[target.ID] {
 			t.Errorf("event %s lifecycle = %q, want %q", target.ID, got.Record.Lifecycle, wants[target.ID])
+		}
+		if got.Record.RetiredBy != retiredBy[target.ID] {
+			t.Errorf("event %s retired_by = %q, want %q", target.ID, got.Record.RetiredBy, retiredBy[target.ID])
+		}
+		wantDoc := ""
+		if target.ID == promoted {
+			wantDoc = "docs/decision.md"
+		}
+		if got.Record.PromotedTo != wantDoc {
+			t.Errorf("event %s promoted_to = %q, want %q", target.ID, got.Record.PromotedTo, wantDoc)
+		}
+		// The record's keys, not the nested event's: a live event carries
+		// neither, and a promote-marker's own promoted_to stays inside event.
+		var raw struct {
+			Record map[string]json.RawMessage `json:"record"`
+		}
+		if err := json.Unmarshal(data, &raw); err != nil {
+			t.Fatal(err)
+		}
+		for key, present := range map[string]bool{"retired_by": retiredBy[target.ID] != "", "promoted_to": wantDoc != ""} {
+			if _, has := raw.Record[key]; has != present {
+				t.Errorf("event %s record has %s = %v, want %v", target.ID, key, has, present)
+			}
 		}
 		if !reflect.DeepEqual(got.Record.Event, target) {
 			t.Errorf("event %s record changed during JSON serialization", target.ID)

@@ -16,9 +16,17 @@ const JSONSchemaVersion = 1
 // folded lifecycle. Keeping the durable record nested makes its own schema
 // version explicit and leaves room for projection metadata without changing
 // the append-only event format.
+//
+// RetiredBy and PromotedTo carry the fold's Retirement for an event it has
+// retired, so a consumer never has to re-derive who retired it (the implicit
+// latest-wins rule has no ref to follow). They are empty for a live event, and
+// so omitted, which is every record `render --json` lists. PromotedTo is the
+// promote-marker's doc pointer, distinct from a marker's own Event.PromotedTo.
 type EventState struct {
-	Lifecycle string      `json:"lifecycle"`
-	Event     event.Event `json:"event"`
+	Lifecycle  string      `json:"lifecycle"`
+	RetiredBy  string      `json:"retired_by,omitempty"`
+	PromotedTo string      `json:"promoted_to,omitempty"`
+	Event      event.Event `json:"event"`
 }
 
 // ResumeHandoffState is one workstream's surviving resume stack. A slice, not
@@ -89,7 +97,12 @@ func ShowJSON(proj Projection, repoKey string, target event.Event) ([]byte, erro
 	out := JSONEvent{
 		SchemaVersion: JSONSchemaVersion,
 		Project:       repoKey,
-		Record:        EventState{Lifecycle: lc.State, Event: target},
+		Record: EventState{
+			Lifecycle:  lc.State,
+			RetiredBy:  lc.Retirement.By,
+			PromotedTo: lc.Retirement.PromotedTo,
+			Event:      target,
+		},
 	}
 	return marshalJSON(out)
 }

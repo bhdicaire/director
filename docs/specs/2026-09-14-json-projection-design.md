@@ -86,10 +86,22 @@ The show envelope is:
   "project": "acme-api",
   "record": {
     "lifecycle": "superseded",
+    "retired_by": "01M0Z7B0JD3QWQ3K4M2Y9N8H5T",
     "event": {}
   }
 }
 ```
+
+`retired_by` is present only when `lifecycle` is one of the fold's retirement verbs
+(`superseded`, `promoted`, `closed`, `concluded`): the id of the event the fold names
+as the retirer, the lowest-ULID one when several apply. It is the id `director show`
+prints after `by` in its `lifecycle:` line, and it spares a consumer from re-deriving
+it, which for a Handoff retired by the implicit latest-wins rule would mean
+re-implementing that rule, since there is no ref to follow. `promoted_to` is present
+only for `promoted`: the doc pointer of that promote-marker, as `show` prints after
+`to`. Both are omitted for a live event, and so from every record of `render --json`.
+`record.promoted_to` describes the retirement; a promote-marker's own `promoted_to`
+stays inside `event`.
 
 The top-level `schema_version` versions these disposable read envelopes. The nested
 event's `schema_version` continues to version its durable log record. Consumers must
@@ -212,6 +224,8 @@ Tests lock:
   and retirement trail, and `show`'s text line, and between the lifecycle table here
   and the values the code emits;
 - `show` over an unprojected type and over an invariant violation, in both outputs;
+- `retired_by` and `promoted_to` equal the text line's `by` id and `to` pointer, and
+  are absent for live events;
 - `[]` envelope collections beside a nested event that omits an empty `refs`;
 - CLI `render --json --verify` and `show --json` envelopes, and `render` rejecting
   positional arguments;

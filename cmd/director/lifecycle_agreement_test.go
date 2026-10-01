@@ -146,7 +146,8 @@ var lifecycleLine = regexp.MustCompile(`(?m)^lifecycle: (\S+) by (\S+)(?: to (.+
 // TestLifecycleAgreement runs seeded random logs through the real `show` and
 // `show --json` and checks, for every event: it is live or retired in the
 // projection, never both and never neither; the JSON lifecycle and the text
-// line agree (same verb and retirer, and a line exactly when retired); and the
+// line agree (same verb and retirer, retired_by and promoted_to matching the
+// line's `by` and `to`, and a line exactly when retired); and the
 // values seen over all the logs are exactly render.Vocabulary, so neither a
 // stray value nor an unreached one passes. Whether a retirer or verb is the
 // right one within its kind is TestFoldRetiredTieBreaks's check, not this one's.
@@ -194,6 +195,15 @@ func TestLifecycleAgreement(t *testing.T) {
 				t.Errorf("seed %d: %s %s is live (%s) but show prints a lifecycle line:\n%s", seed, ev.Type, ev.ID, state, stdout)
 			case retired && (m[1] != got.Record.Lifecycle || m[2] != retirement.By):
 				t.Errorf("seed %d: %s %s text says %q by %q, JSON says %q by %q", seed, ev.Type, ev.ID, m[1], m[2], got.Record.Lifecycle, retirement.By)
+			}
+			// retired_by is the text line's `by` id and promoted_to its `to`
+			// pointer; a live event has neither (m is nil, so both are "").
+			textBy, textDoc := "", ""
+			if m != nil {
+				textBy, textDoc = m[2], m[3]
+			}
+			if got.Record.RetiredBy != textBy || got.Record.PromotedTo != textDoc {
+				t.Errorf("seed %d: %s %s JSON retired_by %q promoted_to %q, text says by %q to %q", seed, ev.Type, ev.ID, got.Record.RetiredBy, got.Record.PromotedTo, textBy, textDoc)
 			}
 		}
 	}
