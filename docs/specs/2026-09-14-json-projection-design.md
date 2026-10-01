@@ -178,8 +178,9 @@ Tests lock:
 - deterministic workstream ordering and `[]` empty collections;
 - complete, uncapped event bodies;
 - each lifecycle value, including implicit and explicit Handoff retirement;
-- the lowest-ULID retirer standing for a Handoff concluded and superseded, and a
-  Decision promoted and superseded, in both orderings;
+- the fold's lowest-ULID retirer standing, with its `By`, for a Handoff concluded and
+  superseded (named directly or swept by the high-water mark) and a Decision promoted
+  and superseded, in both orderings;
 - agreement, over seeded random logs, between the JSON lifecycle, the fold's own sets
   and retirement trail, and `show`'s text line, and between the lifecycle table here
   and the values the code emits;
