@@ -2,7 +2,6 @@ package render
 
 import (
 	"encoding/json"
-	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -218,8 +217,14 @@ func TestLifecycleOfRejectsWhatTheFoldCannotPlace(t *testing.T) {
 		if err == nil {
 			t.Errorf("%s %s lifecycle = %+v, want an error", ev.Type, ev.ID, lc)
 		}
-		if got, want := errors.Is(err, ErrUnprojectedKind), ev.Type == foreign.Type; got != want {
-			t.Errorf("%s %s: errors.Is(err, ErrUnprojectedKind) = %v, want %v (%v)", ev.Type, ev.ID, got, want, err)
+		// The two faults read differently: a type the fold ignores, and an
+		// event of a known type it cannot place.
+		want := "no retirement entry"
+		if ev.Type == foreign.Type {
+			want = "does not project"
+		}
+		if err != nil && !strings.Contains(err.Error(), want) {
+			t.Errorf("%s %s: error %q does not mention %q", ev.Type, ev.ID, err, want)
 		}
 		if data, err := ShowJSON(proj, "widget", ev); err == nil {
 			t.Errorf("ShowJSON(%s %s) = %s, want an error", ev.Type, ev.ID, data)

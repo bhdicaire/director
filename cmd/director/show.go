@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -58,9 +57,11 @@ func runShow(args []string) int {
 		return 1
 	}
 	// The fold is what knows whether the record is still live, so it runs over
-	// the same set the lookup scans. Both outputs take the event's lifecycle
-	// from render.LifecycleOf, which is what keeps the text line and the JSON
-	// value one vocabulary.
+	// the same set the lookup scans. The text form prints the fold's Retired
+	// entry for the event as it always has, and touches nothing else: text
+	// output is unchanged by --json. The JSON form goes through
+	// render.LifecycleOf, which adds the per-kind guard, and on every valid log
+	// the two agree (pinned by TestLifecycleAgreement).
 	proj := render.Fold(events)
 	for _, ev := range events {
 		if ev.ID == target {
@@ -73,23 +74,8 @@ func runShow(args []string) int {
 				fmt.Print(string(out))
 				return 0
 			}
-			// The text form never refuses to print a record: the lifecycle line
-			// is the one derived extra, so a failed derivation (the zero
-			// Lifecycle) costs only that line, and the error is told on stderr.
-			lc, err := render.LifecycleOf(proj, ev)
-			fmt.Print(formatEvent(ev, lc.Retirement))
-			switch {
-			case err == nil:
-				return 0
-			case errors.Is(err, render.ErrUnprojectedKind):
-				// Not a fault: the record is as recorded, there is just no
-				// lifecycle to derive for a type the fold does not know.
-				fmt.Fprintf(os.Stderr, "show: %v; no lifecycle derived\n", err)
-				return 0
-			default:
-				fmt.Fprintf(os.Stderr, "show: %v\n", err)
-				return 1
-			}
+			fmt.Print(formatEvent(ev, proj.Retired[ev.ID]))
+			return 0
 		}
 	}
 	fmt.Fprintf(os.Stderr, "show: no event %s in %s — ULIDs come from the digest, `director render`, or an emit; another project's event needs --project\n", target, repoKey)
@@ -103,8 +89,8 @@ func runShow(args []string) int {
 // one derived addition is the trailing `lifecycle:` line, which the fold (not
 // this function) decides: it is what corrects the recorded status for a reader
 // who followed a pointer here, and it is absent for an active event, whose
-// output is byte-for-byte the as-recorded record. Its verb is the lifecycle
-// string `show --json` carries for the same event.
+// output is byte-for-byte the as-recorded record. On a valid log its verb is the
+// lifecycle string `show --json` carries for the same event.
 func formatEvent(ev event.Event, retirement render.Retirement) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s %s", ev.ID, ev.Type)

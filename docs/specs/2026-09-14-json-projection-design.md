@@ -148,9 +148,11 @@ Two cases have no lifecycle to report, and they are different faults:
   kinds), is an internal invariant violation. A valid log cannot produce one.
 
 `show --json` reports either as an error (exit 1, nothing on stdout) rather than
-emitting a default value. Text `show` never refuses to print a record: it prints it as
-recorded, without a lifecycle line, and names the cause on stderr, exiting 0 for an
-unprojected type and 1 for an invariant violation.
+emitting a default value. The strictness belongs to this JSON contract only: text
+`show` is unchanged from before this feature in every case, including logs the JSON
+path rejects. It prints the record with whatever lifecycle line the fold's retirement
+entry gives it, exits 0, and writes nothing to stderr. On every valid log the text
+line and the JSON lifecycle agree.
 
 ## Versioning
 
@@ -186,9 +188,10 @@ stderr names the cause.
 | Usage: an unknown flag, a `--project` that is not a repo-key, positional arguments (`render`), or anything but exactly one well-formed ULID (`show`) | 2 | 2 |
 
 `render` still writes its manifest as before; a manifest write failure is reported on
-stderr and does not change the exit code. Text `show` differs from `show --json` in
-two rows: an unprojected type prints the record and exits 0, and an invariant
-violation prints the record and exits 1.
+stderr and does not change the exit code. Text `show` is outside this table: it is
+unchanged from before this feature in every case, so for the two rows where `show
+--json` exits 1 on a readable log (an unprojected type, an invariant violation) it
+still prints the record and exits 0.
 
 ## Determinism and compatibility
 
@@ -223,7 +226,8 @@ Tests lock:
 - agreement, over seeded random logs, between the JSON lifecycle, the fold's own sets
   and retirement trail, and `show`'s text line, and between the lifecycle table here
   and the values the code emits;
-- `show` over an unprojected type and over an invariant violation, in both outputs;
+- `show --json` over an unprojected type and over an invariant violation (exit 1,
+  nothing on stdout), and text `show` unchanged on the same logs;
 - `retired_by` and `promoted_to` equal the text line's `by` id and `to` pointer, and
   are absent for live events;
 - `[]` envelope collections beside a nested event that omits an empty `refs`;

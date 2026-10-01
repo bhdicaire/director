@@ -365,12 +365,14 @@ func writeRawLog(t *testing.T, hub, project string, events ...event.Event) {
 	}
 }
 
-// Text `show` never refuses to print a record, and `show --json` never prints
-// a lifecycle it cannot derive. A type the fold does not project is no fault
-// of the log (text: the record as main prints it, a stderr note, exit 0); an
-// event the fold cannot account for is (text: the record, the error, exit 1).
-// JSON exits 1 with nothing on stdout for both.
-func TestShowWhenTheLifecycleCannotBeDerived(t *testing.T) {
+// The JSON contract is strict and the text output is not: where `show --json`
+// cannot derive a lifecycle it exits 1 with nothing on stdout, and text `show`
+// prints exactly what it printed before --json existed: the record plus the
+// fold's own Retired entry, exit 0, nothing on stderr. Two logs `show --json`
+// rejects: a type the fold does not project, and an id reused across kinds,
+// where the lower-ULID superseding decision stands as the retirer of both and
+// the open-item would read "superseded".
+func TestShowTextUnchangedWhereJSONRejects(t *testing.T) {
 	hub := t.TempDir()
 	t.Setenv("DIRECTOR_HUB", hub)
 
@@ -378,26 +380,25 @@ func TestShowWhenTheLifecycleCannotBeDerived(t *testing.T) {
 		ID: mintID(t), SchemaVersion: event.SchemaVersion, Type: event.Kind("blocker"),
 		Workstream: "widget-main", Area: "hooks", TS: lifecycleTS, Body: "a kind this build does not know",
 	}
-	// An id reused across kinds, where the lower-ULID superseding decision
-	// stands as the retirer of both: the open-item would read "superseded".
 	reused, superseder, closer := mintID(t), mintID(t), mintID(t)
 	item := event.Event{ID: reused, SchemaVersion: event.SchemaVersion, Type: event.KindOpenItem, Status: event.StatusOpen, Workstream: "widget-main", TS: lifecycleTS, Body: "the open-item"}
-	writeRawLog(t, hub, "widget",
+	events := []event.Event{
 		unprojected,
 		item,
-		event.Event{ID: reused, SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "widget-main", TS: lifecycleTS, Body: "the decision"},
-		event.Event{ID: superseder, SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "widget-main", Refs: []string{reused}, TS: lifecycleTS, Body: "supersedes"},
-		event.Event{ID: closer, SchemaVersion: event.SchemaVersion, Type: event.KindOpenItem, Status: event.StatusClosed, Workstream: "widget-main", Refs: []string{reused}, TS: lifecycleTS, Body: "closed"},
-	)
+		{ID: reused, SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "widget-main", TS: lifecycleTS, Body: "the decision"},
+		{ID: superseder, SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "widget-main", Refs: []string{reused}, TS: lifecycleTS, Body: "supersedes"},
+		{ID: closer, SchemaVersion: event.SchemaVersion, Type: event.KindOpenItem, Status: event.StatusClosed, Workstream: "widget-main", Refs: []string{reused}, TS: lifecycleTS, Body: "closed"},
+	}
+	writeRawLog(t, hub, "widget", events...)
+	retired := render.Fold(events).Retired
 
 	tests := []struct {
-		name       string
-		ev         event.Event
-		wantCode   int
-		wantStderr string
+		name     string
+		ev       event.Event
+		wantLine string // the lifecycle line the fold's Retired entry gives the text form, or ""
 	}{
-		{"unprojected type", unprojected, 0, "is not projected by the fold; no lifecycle derived\n"},
-		{"id reused across kinds", item, 1, "not a lifecycle of that kind"},
+		{"unprojected type", unprojected, ""},
+		{"id reused across kinds", item, "lifecycle: superseded by " + superseder + "\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name+" text", func(t *testing.T) {
@@ -405,14 +406,14 @@ func TestShowWhenTheLifecycleCannotBeDerived(t *testing.T) {
 			stdout, stderr := captureStreams(t, func() {
 				code = runShow([]string{"--project", "widget", tt.ev.ID})
 			})
-			if code != tt.wantCode {
-				t.Errorf("exit = %d, want %d (stderr %q)", code, tt.wantCode, stderr)
+			if code != 0 || stderr != "" {
+				t.Errorf("exit = %d stderr = %q, want exit 0 and nothing on stderr", code, stderr)
 			}
-			if want := formatEvent(tt.ev, render.Retirement{}); stdout != want {
-				t.Errorf("stdout:\n%q\nwant the record as recorded:\n%q", stdout, want)
+			if want := formatEvent(tt.ev, retired[tt.ev.ID]); stdout != want {
+				t.Errorf("stdout:\n%q\nwant what the pre-JSON path prints:\n%q", stdout, want)
 			}
-			if !strings.HasPrefix(stderr, "show: ") || !strings.Contains(stderr, tt.wantStderr) || strings.Count(stderr, "\n") != 1 {
-				t.Errorf("stderr = %q, want one `show: ...%s` line", stderr, tt.wantStderr)
+			if got := strings.Contains(stdout, "lifecycle:"); got != (tt.wantLine != "") || !strings.Contains(stdout, tt.wantLine) {
+				t.Errorf("stdout lifecycle line = %q, want %q:\n%s", stdout, tt.wantLine, stdout)
 			}
 		})
 		t.Run(tt.name+" json", func(t *testing.T) {
