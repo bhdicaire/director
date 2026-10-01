@@ -310,3 +310,64 @@ func TestLifecycleOfRejectsWhatTheFoldCannotPlace(t *testing.T) {
 		}
 	}
 }
+
+// The envelope collections are [] when empty, but the nested event is the
+// durable record and keeps the event schema's optional-field rules: a ref-less
+// event has no refs key at all, one with refs carries them.
+func TestProjectionJSONNestedEventKeepsDurableOptionalFields(t *testing.T) {
+	bare := event.Event{ID: mint(t), SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "w", Body: "no refs"}
+	linked := event.Event{ID: mint(t), SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "w", Refs: []string{mint(t)}, Body: "has refs"}
+	data, err := ProjectionJSON(Fold([]event.Event{bare, linked}), "widget")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Decisions []struct {
+			Event map[string]any `json:"event"`
+		} `json:"decisions"`
+		OpenItems []any `json:"open_items"`
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Decisions) != 2 {
+		t.Fatalf("decisions = %d, want 2:\n%s", len(got.Decisions), data)
+	}
+	if _, present := got.Decisions[0].Event["refs"]; present {
+		t.Errorf("ref-less event carries a refs key; the nested event must follow the durable schema:\n%s", data)
+	}
+	if refs, present := got.Decisions[1].Event["refs"]; !present || len(refs.([]any)) != 1 {
+		t.Errorf("event with refs lost them: %v", got.Decisions[1].Event)
+	}
+	if got.OpenItems == nil || len(got.OpenItems) != 0 {
+		t.Errorf("empty envelope collection = %v, want []", got.OpenItems)
+	}
+}
+
+// Bodies are code and prose, so < > & stay as written rather than becoming
+// < > &, and a byte-level grep for a body finds it.
+func TestJSONDoesNotHTMLEscape(t *testing.T) {
+	body := `use <T> & "quotes" in a>b`
+	ev := event.Event{ID: mint(t), SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "w", Body: body}
+	proj := Fold([]event.Event{ev})
+
+	list, err := ProjectionJSON(proj, "widget")
+	if err != nil {
+		t.Fatal(err)
+	}
+	one, err := ShowJSON(proj, "widget", ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{"render": list, "show": one} {
+		if strings.Contains(string(data), `\u003`) || strings.Contains(string(data), `\u0026`) {
+			t.Errorf("%s JSON HTML-escaped the body:\n%s", name, data)
+		}
+		if !strings.Contains(string(data), `use <T> & \"quotes\" in a>b`) {
+			t.Errorf("%s JSON does not carry the body verbatim (modulo JSON quoting):\n%s", name, data)
+		}
+	}
+	if !strings.HasSuffix(string(one), "}\n") || !strings.Contains(string(one), "\n  \"record\": {\n") {
+		t.Errorf("JSON is not two-space indented with a trailing newline:\n%s", one)
+	}
+}

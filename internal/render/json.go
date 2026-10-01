@@ -1,6 +1,7 @@
 package render
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"github.com/colinsurprenant/director/internal/event"
@@ -93,10 +94,16 @@ func ShowJSON(proj Projection, repoKey string, target event.Event) ([]byte, erro
 	return marshalJSON(out)
 }
 
+// marshalJSON indents by two spaces and ends with a newline. HTML escaping is
+// off: bodies are code and prose, and \u003c for every < only gets in the way of
+// a consumer that greps the bytes.
 func marshalJSON(value any) ([]byte, error) {
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(value); err != nil {
 		return nil, err
 	}
-	return append(data, '\n'), nil
+	return buf.Bytes(), nil
 }
