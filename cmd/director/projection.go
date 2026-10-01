@@ -22,7 +22,7 @@ func runRender(args []string) int {
 	var verify bool
 	var jsonOutput bool
 	fs.StringVar(&project, "project", "", "repo-key to render (default: current workstream)")
-	fs.BoolVar(&verify, "verify", false, "re-fold and assert the digest is byte-identical (§13 t4)")
+	fs.BoolVar(&verify, "verify", false, "re-fold and assert the output (digest, or the JSON with --json) is byte-identical (§13 t4)")
 	fs.BoolVar(&jsonOutput, "json", false, "print the versioned machine-readable projection")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -32,6 +32,13 @@ func runRender(args []string) int {
 			fmt.Fprintf(os.Stderr, "render: %v\n", err)
 			return 2
 		}
+	}
+	// Go's flag package stops at the first positional, so a flag after one
+	// (`render extra --json`) would be silently ignored and the text digest
+	// printed to a machine consumer that asked for JSON.
+	if fs.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "usage: director render [--project <repo-key>] [--json] [--verify]")
+		return 2
 	}
 
 	hub, repoKey, err := projectTarget(project)

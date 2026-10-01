@@ -51,3 +51,33 @@ func TestRunRenderJSONVerify(t *testing.T) {
 		t.Errorf("default render changed:\n--- want ---\n%s\n--- got ---\n%s", wantText, stdout)
 	}
 }
+
+// A positional stops Go's flag parsing, so `render extra --json` used to print
+// the text digest with exit 0 to a consumer that asked for JSON. It is a usage
+// error, as it is for show.
+func TestRunRenderRejectsPositionals(t *testing.T) {
+	hub := t.TempDir()
+	t.Setenv("DIRECTOR_HUB", hub)
+	ev := event.Event{
+		ID: mintID(t), SchemaVersion: event.SchemaVersion, Type: event.KindDecision,
+		Workstream: "widget-main", Body: "a decision the digest would print",
+	}
+	if err := event.NewStore(hub, "widget").Append(ev); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, args := range [][]string{
+		{"--project", "widget", "extra", "--json"},
+		{"--project", "widget", "--json", "extra"},
+		{"--project", "widget", "extra"},
+	} {
+		var code int
+		stdout, stderr := captureStreams(t, func() { code = runRender(args) })
+		if code != 2 {
+			t.Errorf("render %v exit = %d, want 2", args, code)
+		}
+		if stdout != "" || !strings.HasPrefix(stderr, "usage: director render") {
+			t.Errorf("render %v stdout = %q stderr = %q, want a usage line only", args, stdout, stderr)
+		}
+	}
+}
