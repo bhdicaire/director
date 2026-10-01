@@ -21,16 +21,45 @@ it for you. The habit below is the real guarantee against lost context — treat
 
 ## 1. Continuous boundary-flush (the load-bearing habit)
 
-Emit durable state to the LOG **as you work** — do not batch it for the end of the session.
+Emit durable state to the LOG **as you work** — do not batch it for the end of the session — and
+treat an emit as a tool call, not a turn.
 
-- The **moment** a decision is made or a follow-up is deferred, emit it. Right then, not later.
-  An item written immediately survives an unexpected compaction; an item you were "going to log
-  at the end" is exactly what gets lost.
+- Emit a decision or a deferred follow-up **in the turn it arises**. An item written that turn
+  survives an unexpected compaction; an item you were "going to log at the end" is exactly what
+  gets lost.
+- **Ride along, never stand alone.** Put the `director emit` in the same message as your next
+  tool call, or as the last tool call of the turn when nothing else is left (an extra message
+  beats a fact lost to compaction); several events go out as parallel calls in one message.
+  Ride along with independent calls only: never in parallel with a call that removes the
+  checkout or ends the session, since the emit may not have landed when that call runs.
+  Every extra message re-reads the whole context, and that re-read, not the body, is what an
+  emit costs (measured 2026-09: every emit took its own message plus a scratch-file Write for
+  the body, roughly doubling the turns spent on the ledger).
+- **Terse body, on stdin.** A headline plus a pointer (ULID, path, PR) for a decision,
+  open-item, or note; a handoff's four parts joined with ` · `. Terse is not a word cap: if a
+  body wants a file, the rationale belongs in a doc the body points at (routing rule below).
+  Never draft the body in a scratch file first. Pass it on stdin as a quoted heredoc:
+
+  ```bash
+  director emit --type decision --area store - <<'DIRECTOR_EOF'
+  Keep NDJSON append-only; the fold is the merge (see docs/specs/... §4). Rejected: SQLite.
+  DIRECTOR_EOF
+  ```
+
+  Inside a quoted heredoc nothing expands, so apostrophes, quotes, `$` and backticks are safe.
+  The delimiter is `DIRECTOR_EOF` rather than `EOF` because a body line that matches the
+  delimiter ends the heredoc early and hands the rest of the body to the shell as commands;
+  no body line reads `DIRECTOR_EOF`. Never wrap the call in `$( )` to capture the ULID: read
+  it from the command's output instead. Bash 3.2 (macOS `/bin/bash`, which the Claude Code
+  harness uses) scans the text inside `$( )` for quotes even within a quoted heredoc, so a
+  body with an odd number of apostrophes breaks the whole call. A double-quoted argument is
+  not safe either: the shell expands `$VAR`, backticks and `$( )` before
+  `director` sees the body, and an embedded quote ends it early.
 - At each **natural boundary of work that will resume** (finishing a sub-task, switching focus,
   pausing, wrapping up mid-workstream), emit a `handoff`: **current task · next action ·
   hypotheses · dead ends**. This is the positional snapshot a fresh session (you, after
   compaction, or a peer) reads to pick up where you left off.
-  Dead ends ride along ("tried X, failed because Y") — negative results are what stop the next
+  Dead ends go in the body ("tried X, failed because Y") — negative results are what stop the next
   session from re-walking a path this one already burned.
 - A deferred loop is its **own `open-item` event** — do **not** pack it into the handoff body.
   The handoff carries *position*; open-items carry *carried-forward loops*. `brief`/`render`
@@ -48,14 +77,17 @@ need to hand-compose a big handoff at the last second.
 
 There are exactly four model-emitted kinds. Pick by what the fact *is*:
 
+The `-` in each example reads the body from stdin (a quoted heredoc, §1); the second span is
+the body.
+
 | Kind | Use it for | Example |
 |---|---|---|
-| `decision` | a choice + what it affects (carries `--risk low\|escalate`) | `director emit --type decision --area auth --risk low "Use ULID not UUID for event ids — sortable, matches log fold"` |
-| `open-item` | an open loop / follow-up / deferred item — the canonical home for "documented, not dropped" | `director emit --type open-item --area render "Resolve cross-machine ULID tie-break before multi-machine sync"` |
-| `handoff` | current task · next action · hypotheses · dead ends (positional snapshot at a boundary) | `director emit --type handoff --area store --refs <the resume point ULID(s) you rehydrated from> "Done: NDJSON append. Next: wire emit dispatch. Hypothesis: O_APPEND is line-atomic on POSIX. Dead end: fsync-per-line, 30x too slow"` |
-| `note` | FYI / context for a parallel or future session; a finished task's outcome (a review verdict, an investigation result) | `director emit --type note --to @next-on-hooks --area hooks "settings.json merge is _managedBy-tagged — don't strip GSD entries"` |
+| `decision` | a choice + what it affects (carries `--risk low\|escalate`) | `director emit --type decision --area auth --risk low -` + `Use ULID not UUID for event ids — sortable, matches log fold` |
+| `open-item` | an open loop / follow-up / deferred item — the canonical home for "documented, not dropped" | `director emit --type open-item --area render -` + `Resolve cross-machine ULID tie-break before multi-machine sync` |
+| `handoff` | current task · next action · hypotheses · dead ends (positional snapshot at a boundary) | `director emit --type handoff --area store --refs <the resume point ULID(s) you rehydrated from> -` + `Done: NDJSON append. Next: wire emit dispatch. Hypothesis: O_APPEND is line-atomic on POSIX. Dead end: fsync-per-line, 30x too slow` |
+| `note` | FYI / context for a parallel or future session; a finished task's outcome (a review verdict, an investigation result) | `director emit --type note --to @next-on-hooks --area hooks -` + `settings.json merge is _managedBy-tagged — don't strip GSD entries` |
 
-Two **reserved ref meanings**, both load-bearing:
+Three **reserved ref meanings**, all load-bearing:
 
 - A `note` whose `--refs` names a **handoff** CONCLUDES it — that handoff (and the workstream's
   older ones) leaves the digest's resume points, staying in the log. `/director:complete` uses
@@ -67,11 +99,17 @@ Two **reserved ref meanings**, both load-bearing:
   position on the same workstream survives instead of being silently overwritten. A handoff with
   no such refs retires ALL older positions of the workstream, including one you never saw.
   `/director:handoff` does this on every checkpoint.
+- A `decision` whose `--refs` names **decision(s)** SUPERSEDES them: they leave the digest's active
+  decisions, staying in the log. There is no status, workstream, or ordering check: any decision's
+  refs retire any decision they name. Ref the earlier decision when yours replaces, amends, or
+  withdraws it; a withdrawal is itself a decision, emitted like any other. A `note`'s refs on a
+  decision retire nothing.
 
-Refs to decisions and open-items carry no such effect. When your injected state shows **several**
-resume points for your workstream, that is two parallel sessions' positions stacked: read them
-all, consolidate them into your next handoff body, and `--refs` each — that collapses the stack
-back to one.
+Refs you pass to `emit` never retire an open-item; only `resolve` does, by writing a closed
+open-item marker whose refs name its targets. A `note`'s or an `open-item`'s refs to a decision
+do not supersede it. When your injected state shows **several** resume points for
+your workstream, that is two parallel sessions' positions stacked: read them all, consolidate them
+into your next handoff body, and `--refs` each — that collapses the stack back to one.
 
 Routing rule: an **open loop you carry forward** → an `open-item` event (its one home).
 **Durable structured knowledge** (intent, architecture, a decision's full rationale) → the living
@@ -82,8 +120,10 @@ the full content.
 
 When you are blocked and need the human, emit an **`open-item` with `--risk escalate`**:
 
-```
-director emit --type open-item --area deploy --risk escalate "Need prod DB creds to finish migration — cannot proceed"
+```bash
+director emit --type open-item --area deploy --risk escalate - <<'DIRECTOR_EOF'
+Need prod DB creds to finish migration — cannot proceed
+DIRECTOR_EOF
 ```
 
 The escalate-flagged open-set is exactly what surfaces in the cockpit's **Needs-you** band. Use

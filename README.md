@@ -273,10 +273,14 @@ misc:
 
 ```bash
 director emit --type decision|open-item|handoff|note --area <subsystem> \
-  [--risk low|escalate] [--to <handle>] [--refs <ulid,ulid>] <body>
+  [--risk low|escalate] [--to <handle>] [--refs <ulid,ulid>] - <<'DIRECTOR_EOF'
+<body>
+DIRECTOR_EOF
 ```
 
-`emit` prints the **new event's ULID to stdout**: note it; that is the id used to `--refs` or `resolve` the event later. (Two `--refs` pairings are load-bearing: a `note` ref naming a **handoff** concludes it, and a `handoff` ref naming same-workstream **handoff(s)** supersedes exactly those resume points and no others — see the kind table's lifecycle column below.)
+The `-` reads the body from stdin; the quoted heredoc keeps `$`, backticks and quotes literal, which a double-quoted argument does not. (A plain `<body>` argument is still accepted; a body that is exactly `-` is reserved for stdin.)
+
+`emit` prints the **new event's ULID to stdout**: note it; that is the id used to `--refs` or `resolve` the event later. (Three `--refs` pairings are load-bearing: a `note` ref naming a **handoff** concludes it, a `handoff` ref naming same-workstream **handoff(s)** supersedes exactly those resume points and no others, and a `decision` ref naming **decision(s)** supersedes them, retiring them from the digest's active decisions — see the kind table's lifecycle column below.)
 
 `emit` also echoes a routing line to **stderr** (`→ <repo-key> · <workstream-id>`) naming the project it wrote to. If that is not the project the session expects, its cwd drifted and the event landed in the wrong log.
 
@@ -310,7 +314,7 @@ Validation is `resolve`-parity: every target must be a decision the CLI surfaced
 
 `brief` and `render` share the same byte-identical fold of the log: the human reads the same picture a fresh session reads. A fourth, narrower projection, `open-items`, lists a workstream's unresolved open-items (ULID + body); it exists to feed `resolve` and `/director:complete`. It defaults to the current workstream; `--workstream <id>` retargets it at a sibling: the close-out path for a workstream whose session is already gone.
 
-The digest is deliberately an *index*: every line is capped to a headline so the injection stays small as a project's log grows, and nothing is lost: `show <ulid>` prints any single event in full (body verbatim, as recorded), one deterministic hop from any headline. When even the capped digest would overrun the injection budget, the decisions section collapses to a count-plus-pointer line and the overflow lands in `health/` as a grooming signal; the open-set and the resume points are never cut. The grooming verbs that keep that headroom are `resolve` (compacts the open-set), supersession via `--refs`, and `promote` (compacts the decision set into the docs).
+The digest is deliberately an *index*: every line is capped to a headline so the injection stays small as a project's log grows, and nothing is lost: `show <ulid>` prints any single event in full (body verbatim, as recorded, plus one derived `lifecycle:` line when the fold has retired it), one deterministic hop from any headline. When even the capped digest would overrun the injection budget, the decisions section collapses to a count-plus-pointer line and the overflow lands in `health/` as a grooming signal; the open-set and the resume points are never cut. The grooming verbs that keep that headroom are `resolve` (compacts the open-set), supersession via `--refs`, and `promote` (compacts the decision set into the docs).
 
 Machine consumers can use `render --json` instead of parsing the presentation-oriented digest. The JSON envelope has its own `schema_version`, independent of the durable event schema. It contains the active Decisions, open Open Items, and resumable Handoff stacks in deterministic order; every record includes its lifecycle and complete event. `show --json <ulid>` returns any current or historical event with its folded lifecycle. The default text output remains unchanged.
 
@@ -324,7 +328,7 @@ There are exactly four model-emitted semantic kinds. Pick by what the fact *is*:
 
 | Kind | Use it for | Lifecycle |
 |---|---|---|
-| `decision` | a choice + what it affects | active → superseded (a later decision's `--refs`) or promoted (via `promote`); carries `--risk low\|escalate` |
+| `decision` | a choice + what it affects | active → superseded (another decision's `--refs`, any workstream, no ordering check) or promoted (via `promote`); carries `--risk low\|escalate` |
 | `open-item` | an open loop / follow-up / deferred item, the canonical home for "documented, not dropped" | open → closed (via `resolve`) |
 | `handoff` | a positional snapshot: current task · next action · hypotheses · dead ends (tried X, failed: Y) | active → superseded (a later same-workstream handoff's `--refs`: exactly the positions it names, nothing older, nothing newer; a handoff carrying no such refs retires all older ones) or concluded (a `note`'s `--refs` via `/director:complete`); either way it leaves the digest, stays in the log |
 | `note` | FYI / context for a parallel or future session; a finished task's outcome (a review verdict, an investigation result) | none |
@@ -336,7 +340,7 @@ There are exactly four model-emitted semantic kinds. Pick by what the fact *is*:
 
 The SessionStart hook injects this protocol into every managed-repo session, so the emit habit is in context from turn one: pushed as injected state, not shipped as a lazy model-invoked skill, because an always-on habit only fires if it is already in the window. (`skills/director/SKILL.md` is the readable source of the same text.) It teaches a session two load-bearing habits that no hook can perform for it:
 
-- **Continuous boundary-flush**: emit durable state to the LOG *as you work* (the moment a decision is made or a loop is deferred, and a `handoff` at each natural boundary), never batched for the end of a session. Transient working state survives a compaction only if the model wrote it to the LOG during a turn.
+- **Continuous boundary-flush**: emit durable state to the LOG *as you work* (in the turn a decision is made or a loop is deferred, and a `handoff` at each natural boundary), never batched for the end of a session. Transient working state survives a compaction only if the model wrote it to the LOG during a turn. An emit rides along with the session's next tool call, its body on stdin as a quoted heredoc, so the habit usually costs a tool call, not a turn.
 - **Ground Truth**: treat the CHARTER + digest injected at session start as the *authoritative current picture*: build on it, do not re-derive it by re-scanning the repo or re-reading the log.
 
 ## Identity
