@@ -90,10 +90,14 @@ func generateLog(t *testing.T, store *event.Store, seed int64, n int) []event.Ev
 	return events
 }
 
-// oracle states what proj's own sets and its Retired map imply for ev, written
-// out independently of render.LifecycleOf so the two can disagree. retired
-// reports whether ev left a set the fold keeps (a retired event has an entry
-// in proj.Retired; every other one has none).
+// oracle restates the lookup LifecycleOf makes (membership in proj's sets, else
+// the Retired entry) as the reference for what `show` must print, and fails the
+// test when an event is both live and retired, or neither. It is a copy of that
+// rule, not an independent derivation of it: it can catch `show` wiring the
+// lifecycle through wrongly and the fold leaving an event unaccounted for, but
+// not a wrong verb or By within a kind, which is the fold's own test's job
+// (TestFoldRetiredTieBreaks in internal/render). retired reports whether ev has
+// a Retired entry.
 func oracle(t *testing.T, proj render.Projection, ev event.Event) (state string, retirement render.Retirement, retired bool) {
 	t.Helper()
 	in := func(list []event.Event) bool {
@@ -140,10 +144,12 @@ func oracle(t *testing.T, proj render.Projection, ev event.Event) (state string,
 var lifecycleLine = regexp.MustCompile(`(?m)^lifecycle: (\S+) by (\S+)(?: to (.+))?$`)
 
 // TestLifecycleAgreement runs seeded random logs through the real `show` and
-// `show --json` and checks, for every event, that the JSON lifecycle is what
-// the projection's membership plus proj.Retired imply, that the text line
-// names the same verb and retirer when (and only when) the event is retired,
-// and that every value stays inside the documented vocabulary.
+// `show --json` and checks, for every event: it is live or retired in the
+// projection, never both and never neither; the JSON lifecycle and the text
+// line agree (same verb and retirer, and a line exactly when retired); and the
+// values seen over all the logs are exactly render.Vocabulary, so neither a
+// stray value nor an unreached one passes. Whether a retirer or verb is the
+// right one within its kind is TestFoldRetiredTieBreaks's check, not this one's.
 func TestLifecycleAgreement(t *testing.T) {
 	seen := make(map[event.Kind]map[string]bool)
 	for _, kind := range allKinds {
