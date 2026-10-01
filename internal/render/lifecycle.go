@@ -1,6 +1,7 @@
 package render
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 
@@ -36,6 +37,12 @@ func Vocabulary(kind event.Kind) []string {
 	return slices.Clone(vocabulary[kind])
 }
 
+// ErrUnprojectedKind marks an event whose type the fold does not project: a
+// hand-edited log, or one written by a build that knows more kinds. The record
+// itself is fine; it just has no lifecycle to derive. Callers separate it, with
+// errors.Is, from the invariant violations LifecycleOf also reports.
+var ErrUnprojectedKind = errors.New("type is not projected by the fold")
+
 // Lifecycle is where one event stands in a Projection.
 type Lifecycle struct {
 	State      string     // a State constant for a live event, the Retirement's Verb for a retired one
@@ -48,7 +55,8 @@ type Lifecycle struct {
 // removal rules. An event that is neither live nor retired is an invariant
 // violation (a fold rule that removes without recording why, an event the
 // projection was not built from) and comes back as an error rather than as a
-// default label.
+// default label. A type the fold does not project is the other error,
+// ErrUnprojectedKind, and says nothing about the log's health.
 func LifecycleOf(proj Projection, ev event.Event) (Lifecycle, error) {
 	live := ""
 	switch ev.Type {
@@ -74,7 +82,7 @@ func LifecycleOf(proj Projection, ev event.Event) (Lifecycle, error) {
 			live = StateRecorded
 		}
 	default:
-		return Lifecycle{}, fmt.Errorf("render: event %s has type %q, which the fold does not project", ev.ID, ev.Type)
+		return Lifecycle{}, fmt.Errorf("render: event %s has type %q: %w", ev.ID, ev.Type, ErrUnprojectedKind)
 	}
 	lc := Lifecycle{State: live}
 	if live == "" {

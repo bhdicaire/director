@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -72,13 +73,23 @@ func runShow(args []string) int {
 				fmt.Print(string(out))
 				return 0
 			}
+			// The text form never refuses to print a record: the lifecycle line
+			// is the one derived extra, so a failed derivation (the zero
+			// Lifecycle) costs only that line, and the error is told on stderr.
 			lc, err := render.LifecycleOf(proj, ev)
-			if err != nil {
+			fmt.Print(formatEvent(ev, lc.Retirement))
+			switch {
+			case err == nil:
+				return 0
+			case errors.Is(err, render.ErrUnprojectedKind):
+				// Not a fault: the record is as recorded, there is just no
+				// lifecycle to derive for a type the fold does not know.
+				fmt.Fprintf(os.Stderr, "show: %v; no lifecycle derived\n", err)
+				return 0
+			default:
 				fmt.Fprintf(os.Stderr, "show: %v\n", err)
 				return 1
 			}
-			fmt.Print(formatEvent(ev, lc.Retirement))
-			return 0
 		}
 	}
 	fmt.Fprintf(os.Stderr, "show: no event %s in %s — ULIDs come from the digest, `director render`, or an emit; another project's event needs --project\n", target, repoKey)

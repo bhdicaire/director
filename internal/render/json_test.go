@@ -2,6 +2,7 @@ package render
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -302,8 +303,12 @@ func TestLifecycleOfRejectsWhatTheFoldCannotPlace(t *testing.T) {
 	proj := Fold([]event.Event{{ID: mint(t), SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "w"}, foreign})
 
 	for _, ev := range []event.Event{stranger, foreign} {
-		if lc, err := LifecycleOf(proj, ev); err == nil {
+		lc, err := LifecycleOf(proj, ev)
+		if err == nil {
 			t.Errorf("%s %s lifecycle = %+v, want an error", ev.Type, ev.ID, lc)
+		}
+		if got, want := errors.Is(err, ErrUnprojectedKind), ev.Type == foreign.Type; got != want {
+			t.Errorf("%s %s: errors.Is(err, ErrUnprojectedKind) = %v, want %v (%v)", ev.Type, ev.ID, got, want, err)
 		}
 		if data, err := ShowJSON(proj, "widget", ev); err == nil {
 			t.Errorf("ShowJSON(%s %s) = %s, want an error", ev.Type, ev.ID, data)

@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -335,6 +337,94 @@ func TestShowLifecycleLine(t *testing.T) {
 			}
 			if stdout != tt.want {
 				t.Errorf("show output:\n%q\nwant:\n%q", stdout, tt.want)
+			}
+		})
+	}
+}
+
+// writeRawLog writes events straight into the project's log, bypassing the
+// store's validation, so a test can hold records the writer would refuse: a
+// type no build knows, or an id reused across kinds.
+func writeRawLog(t *testing.T, hub, project string, events ...event.Event) {
+	t.Helper()
+	path := event.NewStore(hub, project).Path()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	for _, ev := range events {
+		line, err := json.Marshal(ev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.Write(line)
+		b.WriteString("\n")
+	}
+	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Text `show` never refuses to print a record, and `show --json` never prints
+// a lifecycle it cannot derive. A type the fold does not project is no fault
+// of the log (text: the record as main prints it, a stderr note, exit 0); an
+// event the fold cannot account for is (text: the record, the error, exit 1).
+// JSON exits 1 with nothing on stdout for both.
+func TestShowWhenTheLifecycleCannotBeDerived(t *testing.T) {
+	hub := t.TempDir()
+	t.Setenv("DIRECTOR_HUB", hub)
+
+	unprojected := event.Event{
+		ID: mintID(t), SchemaVersion: event.SchemaVersion, Type: event.Kind("blocker"),
+		Workstream: "widget-main", Area: "hooks", TS: lifecycleTS, Body: "a kind this build does not know",
+	}
+	// An id reused across kinds, where the lower-ULID superseding decision
+	// stands as the retirer of both: the open-item would read "superseded".
+	reused, superseder, closer := mintID(t), mintID(t), mintID(t)
+	item := event.Event{ID: reused, SchemaVersion: event.SchemaVersion, Type: event.KindOpenItem, Status: event.StatusOpen, Workstream: "widget-main", TS: lifecycleTS, Body: "the open-item"}
+	writeRawLog(t, hub, "widget",
+		unprojected,
+		item,
+		event.Event{ID: reused, SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "widget-main", TS: lifecycleTS, Body: "the decision"},
+		event.Event{ID: superseder, SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "widget-main", Refs: []string{reused}, TS: lifecycleTS, Body: "supersedes"},
+		event.Event{ID: closer, SchemaVersion: event.SchemaVersion, Type: event.KindOpenItem, Status: event.StatusClosed, Workstream: "widget-main", Refs: []string{reused}, TS: lifecycleTS, Body: "closed"},
+	)
+
+	tests := []struct {
+		name       string
+		ev         event.Event
+		wantCode   int
+		wantStderr string
+	}{
+		{"unprojected type", unprojected, 0, "is not projected by the fold; no lifecycle derived\n"},
+		{"id reused across kinds", item, 1, "not a lifecycle of that kind"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name+" text", func(t *testing.T) {
+			var code int
+			stdout, stderr := captureStreams(t, func() {
+				code = runShow([]string{"--project", "widget", tt.ev.ID})
+			})
+			if code != tt.wantCode {
+				t.Errorf("exit = %d, want %d (stderr %q)", code, tt.wantCode, stderr)
+			}
+			if want := formatEvent(tt.ev, render.Retirement{}); stdout != want {
+				t.Errorf("stdout:\n%q\nwant the record as recorded:\n%q", stdout, want)
+			}
+			if !strings.HasPrefix(stderr, "show: ") || !strings.Contains(stderr, tt.wantStderr) || strings.Count(stderr, "\n") != 1 {
+				t.Errorf("stderr = %q, want one `show: ...%s` line", stderr, tt.wantStderr)
+			}
+		})
+		t.Run(tt.name+" json", func(t *testing.T) {
+			var code int
+			stdout, stderr := captureStreams(t, func() {
+				code = runShow([]string{"--project", "widget", "--json", tt.ev.ID})
+			})
+			if code != 1 || stdout != "" {
+				t.Errorf("exit = %d stdout = %q, want exit 1 and no stdout", code, stdout)
+			}
+			if !strings.HasPrefix(stderr, "show: ") || strings.Count(stderr, "\n") != 1 {
+				t.Errorf("stderr = %q, want one `show: ...` line", stderr)
 			}
 		})
 	}

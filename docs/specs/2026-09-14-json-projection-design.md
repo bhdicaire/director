@@ -126,10 +126,19 @@ lowest-ULID retirer and the lifecycle follows it:
   `promoted` when the marker's ULID is lower and `superseded` when the Decision's is.
 
 The answer is a function of the event set, not of the order the rules are applied in.
-An event the projection can neither place nor trace to a retirement, or whose
-retirement verb is not in its own kind's row of the table above (an id reused across
-kinds), is an internal invariant violation: `show --json` reports it as an error
-(exit 1) rather than emitting a default value.
+Two cases have no lifecycle to report, and they are different faults:
+
+- An event whose type the fold does not project (a hand-edited log, or one written by a
+  build that knows more kinds) is not an invariant violation. The record is intact;
+  there is nothing to derive.
+- An event the projection can neither place nor trace to a retirement, or whose
+  retirement verb is not in its own kind's row of the table above (an id reused across
+  kinds), is an internal invariant violation. A valid log cannot produce one.
+
+`show --json` reports either as an error (exit 1, nothing on stdout) rather than
+emitting a default value. Text `show` never refuses to print a record: it prints it as
+recorded, without a lifecycle line, and names the cause on stderr, exiting 0 for an
+unprojected type and 1 for an invariant violation.
 
 ## Versioning
 
@@ -174,6 +183,7 @@ Tests lock:
 - agreement, over seeded random logs, between the JSON lifecycle, the fold's own sets
   and retirement trail, and `show`'s text line, and between the lifecycle table here
   and the values the code emits;
+- `show` over an unprojected type and over an invariant violation, in both outputs;
 - `[]` envelope collections beside a nested event that omits an empty `refs`;
 - CLI `render --json --verify` and `show --json` envelopes, and `render` rejecting
   positional arguments;
