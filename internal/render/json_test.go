@@ -83,7 +83,7 @@ func TestShowJSONLifecycle(t *testing.T) {
 	closed := mint(t)
 	closeMarker := mint(t)
 	open := mint(t)
-	retired := mint(t)
+	implicitlySuperseded := mint(t)
 	resumable := mint(t)
 	concluded := mint(t)
 	concludingNote := mint(t)
@@ -98,7 +98,7 @@ func TestShowJSONLifecycle(t *testing.T) {
 		{ID: closed, SchemaVersion: event.SchemaVersion, Type: event.KindOpenItem, Status: event.StatusOpen, Workstream: "ws", Body: "closed item"},
 		{ID: closeMarker, SchemaVersion: event.SchemaVersion, Type: event.KindOpenItem, Status: event.StatusClosed, Workstream: "ws", Refs: []string{closed}, Body: "resolution"},
 		{ID: open, SchemaVersion: event.SchemaVersion, Type: event.KindOpenItem, Status: event.StatusOpen, Workstream: "ws", Body: "open item"},
-		{ID: retired, SchemaVersion: event.SchemaVersion, Type: event.KindHandoff, Workstream: "ws", Body: "old position"},
+		{ID: implicitlySuperseded, SchemaVersion: event.SchemaVersion, Type: event.KindHandoff, Workstream: "ws", Body: "old position"},
 		{ID: resumable, SchemaVersion: event.SchemaVersion, Type: event.KindHandoff, Workstream: "ws", Body: "current position"},
 		{ID: concluded, SchemaVersion: event.SchemaVersion, Type: event.KindHandoff, Workstream: "ws2", Body: "completed position"},
 		{ID: concludingNote, SchemaVersion: event.SchemaVersion, Type: event.KindNote, Workstream: "ws2", Refs: []string{concluded}, Body: "completed"},
@@ -115,7 +115,7 @@ func TestShowJSONLifecycle(t *testing.T) {
 		closed:               "closed",
 		closeMarker:          "resolution-marker",
 		open:                 "open",
-		retired:              "retired",
+		implicitlySuperseded: "superseded",
 		resumable:            "resumable",
 		concluded:            "concluded",
 		concludingNote:       "recorded",
@@ -123,7 +123,7 @@ func TestShowJSONLifecycle(t *testing.T) {
 		explicitSuccessor:    "resumable",
 	}
 	for _, target := range events {
-		data, err := ShowJSON(events, proj, "widget", target)
+		data, err := ShowJSON(proj, "widget", target)
 		if err != nil {
 			t.Fatalf("show %s: %v", target.ID, err)
 		}
@@ -136,6 +136,177 @@ func TestShowJSONLifecycle(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got.Record.Event, target) {
 			t.Errorf("event %s record changed during JSON serialization", target.ID)
+		}
+	}
+}
+
+// logSpec is one event of a precedence fixture, named by label so a test can
+// mint the ids in whatever order it needs and still say who refs whom.
+type logSpec struct {
+	typ  event.Kind
+	ws   string
+	refs []string // labels
+	mark bool     // a promote-marker (decisions only)
+}
+
+// buildLog mints ids in the order given and returns the events, in that same
+// (ULID-ascending) order, with refs resolved to ids.
+func buildLog(t *testing.T, order []string, specs map[string]logSpec) ([]event.Event, map[string]string) {
+	t.Helper()
+	ids := make(map[string]string, len(order))
+	for _, label := range order {
+		ids[label] = mint(t)
+	}
+	events := make([]event.Event, 0, len(order))
+	for _, label := range order {
+		spec := specs[label]
+		ev := event.Event{ID: ids[label], SchemaVersion: event.SchemaVersion, Type: spec.typ, Workstream: spec.ws, Body: label}
+		for _, ref := range spec.refs {
+			ev.Refs = append(ev.Refs, ids[ref])
+		}
+		if spec.mark {
+			ev.Status = event.StatusPromoted
+			ev.PromotedTo = "docs/why.md"
+		}
+		events = append(events, ev)
+	}
+	return events, ids
+}
+
+// A handoff the fold retires by two paths gets the lifecycle of the LOWEST-ULID
+// retirer, whichever path that is: the verb comes from proj.Retired, never from
+// a precedence rule of the JSON layer's own.
+func TestShowJSONLifecycleLowestRetirerStands(t *testing.T) {
+	// direct: the note names h1 itself. swept: the note names hx, a position
+	// above h1, so it reaches h1 only through the conclusion high-water mark
+	// (h0 gives hx an explicit ref, keeping h1 off the implicit mark's path).
+	direct := map[string]logSpec{
+		"h1":   {typ: event.KindHandoff, ws: "w"},
+		"h2":   {typ: event.KindHandoff, ws: "w", refs: []string{"h1"}},
+		"note": {typ: event.KindNote, ws: "w", refs: []string{"h1"}},
+	}
+	swept := map[string]logSpec{
+		"h0":   {typ: event.KindHandoff, ws: "w"},
+		"h1":   {typ: event.KindHandoff, ws: "w"},
+		"hx":   {typ: event.KindHandoff, ws: "w", refs: []string{"h0"}},
+		"h2":   {typ: event.KindHandoff, ws: "w", refs: []string{"h1"}},
+		"note": {typ: event.KindNote, ws: "w", refs: []string{"hx"}},
+	}
+	tests := []struct {
+		name   string
+		specs  map[string]logSpec
+		order  []string
+		want   string
+		wantBy string
+	}{
+		{"direct, conclusion first", direct, []string{"h1", "note", "h2"}, VerbConcluded, "note"},
+		{"direct, supersession first", direct, []string{"h1", "h2", "note"}, VerbSuperseded, "h2"},
+		{"swept by the mark, conclusion first", swept, []string{"h0", "h1", "hx", "note", "h2"}, VerbConcluded, "note"},
+		{"swept by the mark, supersession first", swept, []string{"h0", "h1", "hx", "h2", "note"}, VerbSuperseded, "h2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			events, ids := buildLog(t, tt.order, tt.specs)
+			proj := Fold(events)
+			r := proj.Retired[ids["h1"]]
+			if r.Verb != tt.want || r.By != ids[tt.wantBy] {
+				t.Fatalf("fold retired h1 as %+v, want %s by %s", r, tt.want, tt.wantBy)
+			}
+			for _, ev := range events {
+				if ev.ID != ids["h1"] {
+					continue
+				}
+				data, err := ShowJSON(proj, "widget", ev)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var got JSONEvent
+				if err := json.Unmarshal(data, &got); err != nil {
+					t.Fatal(err)
+				}
+				if got.Record.Lifecycle != tt.want {
+					t.Errorf("lifecycle = %q, want %q", got.Record.Lifecycle, tt.want)
+				}
+			}
+		})
+	}
+}
+
+// The same rule for a decision that is both promoted and superseded: the
+// lowest-ULID of the promote-marker and the superseding decision stands.
+func TestShowJSONLifecycleDecisionPromotedAndSuperseded(t *testing.T) {
+	specs := map[string]logSpec{
+		"d": {typ: event.KindDecision, ws: "w"},
+		"s": {typ: event.KindDecision, ws: "w", refs: []string{"d"}},
+		"p": {typ: event.KindDecision, ws: "w", refs: []string{"d"}, mark: true},
+	}
+	tests := []struct {
+		name  string
+		order []string
+		want  string
+	}{
+		{"promote-marker first", []string{"d", "p", "s"}, VerbPromoted},
+		{"superseding decision first", []string{"d", "s", "p"}, VerbSuperseded},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			events, ids := buildLog(t, tt.order, specs)
+			lc, err := LifecycleOf(Fold(events), events[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if events[0].ID != ids["d"] || lc.State != tt.want {
+				t.Errorf("decision lifecycle = %q, want %q", lc.State, tt.want)
+			}
+		})
+	}
+}
+
+// A handoff's resumable check reads its own workstream's stack only. This log
+// reuses an id across workstreams (the store refuses that since #69, but the
+// fold still folds a log that has one): w1's position is retired by w1's later
+// handoff, and w2's same-id handoff sitting on w2's stack must not revive it.
+func TestShowJSONLifecycleResumableIsScopedToItsWorkstream(t *testing.T) {
+	reused, later := mint(t), mint(t)
+	events := []event.Event{
+		{ID: reused, SchemaVersion: event.SchemaVersion, Type: event.KindHandoff, Workstream: "w1", Body: "w1 position"},
+		{ID: reused, SchemaVersion: event.SchemaVersion, Type: event.KindHandoff, Workstream: "w2", Body: "w2 position"},
+		{ID: later, SchemaVersion: event.SchemaVersion, Type: event.KindHandoff, Workstream: "w1", Body: "w1 newer position"},
+	}
+	proj := Fold(events)
+	if !containsEvent(proj.ResumeHandoffs["w2"], reused) {
+		t.Fatalf("fixture: w2's position should be resumable, stacks = %v", proj.ResumeHandoffs)
+	}
+	for _, tt := range []struct {
+		ev   event.Event
+		want string
+	}{
+		{events[0], VerbSuperseded},
+		{events[2], StateResumable},
+	} {
+		lc, err := LifecycleOf(proj, tt.ev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if lc.State != tt.want {
+			t.Errorf("%s handoff %s lifecycle = %q, want %q", tt.ev.Workstream, tt.ev.ID, lc.State, tt.want)
+		}
+	}
+}
+
+// A lifecycle the fold cannot account for is an error, never a default label:
+// an event the projection was not built from, and a type the fold ignores.
+func TestLifecycleOfRejectsWhatTheFoldCannotPlace(t *testing.T) {
+	stranger := event.Event{ID: mint(t), SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "w", Body: "not in the log"}
+	foreign := event.Event{ID: mint(t), SchemaVersion: event.SchemaVersion, Type: event.Kind("blocker"), Workstream: "w", Body: "no such kind"}
+	proj := Fold([]event.Event{{ID: mint(t), SchemaVersion: event.SchemaVersion, Type: event.KindDecision, Workstream: "w"}, foreign})
+
+	for _, ev := range []event.Event{stranger, foreign} {
+		if lc, err := LifecycleOf(proj, ev); err == nil {
+			t.Errorf("%s %s lifecycle = %+v, want an error", ev.Type, ev.ID, lc)
+		}
+		if data, err := ShowJSON(proj, "widget", ev); err == nil {
+			t.Errorf("ShowJSON(%s %s) = %s, want an error", ev.Type, ev.ID, data)
 		}
 	}
 }

@@ -2,7 +2,6 @@ package render
 
 import (
 	"encoding/json"
-	"sort"
 
 	"github.com/colinsurprenant/director/internal/event"
 )
@@ -59,10 +58,10 @@ func ProjectionJSON(proj Projection, repoKey string) ([]byte, error) {
 		ResumeHandoffs: make([]ResumeHandoffState, 0, len(proj.ResumeHandoffs)),
 	}
 	for _, ev := range proj.Decisions {
-		out.Decisions = append(out.Decisions, EventState{Lifecycle: "active", Event: ev})
+		out.Decisions = append(out.Decisions, EventState{Lifecycle: StateActive, Event: ev})
 	}
 	for _, ev := range proj.OpenItems {
-		out.OpenItems = append(out.OpenItems, EventState{Lifecycle: "open", Event: ev})
+		out.OpenItems = append(out.OpenItems, EventState{Lifecycle: StateOpen, Event: ev})
 	}
 	for _, workstream := range sortedKeys(proj.ResumeHandoffs) {
 		stack := ResumeHandoffState{
@@ -70,23 +69,26 @@ func ProjectionJSON(proj Projection, repoKey string) ([]byte, error) {
 			Handoffs:   make([]EventState, 0, len(proj.ResumeHandoffs[workstream])),
 		}
 		for _, ev := range proj.ResumeHandoffs[workstream] {
-			stack.Handoffs = append(stack.Handoffs, EventState{Lifecycle: "resumable", Event: ev})
+			stack.Handoffs = append(stack.Handoffs, EventState{Lifecycle: StateResumable, Event: ev})
 		}
 		out.ResumeHandoffs = append(out.ResumeHandoffs, stack)
 	}
 	return marshalJSON(out)
 }
 
-// ShowJSON serializes one event with its lifecycle under the complete event
-// set. Unlike ProjectionJSON, it can describe inactive historical records.
-func ShowJSON(events []event.Event, proj Projection, repoKey string, target event.Event) ([]byte, error) {
+// ShowJSON serializes one event with its lifecycle in the projection built from
+// the complete event set. Unlike ProjectionJSON, it can describe inactive
+// historical records; an event the projection can neither place nor trace to a
+// retirement is an error, never a defaulted label (see LifecycleOf).
+func ShowJSON(proj Projection, repoKey string, target event.Event) ([]byte, error) {
+	lc, err := LifecycleOf(proj, target)
+	if err != nil {
+		return nil, err
+	}
 	out := JSONEvent{
 		SchemaVersion: JSONSchemaVersion,
 		Project:       repoKey,
-		Record: EventState{
-			Lifecycle: lifecycle(events, proj, target),
-			Event:     target,
-		},
+		Record:        EventState{Lifecycle: lc.State, Event: target},
 	}
 	return marshalJSON(out)
 }
@@ -97,87 +99,4 @@ func marshalJSON(value any) ([]byte, error) {
 		return nil, err
 	}
 	return append(data, '\n'), nil
-}
-
-// lifecycle returns the current semantic state of target. The vocabulary is
-// kind-specific by design: Director has four distinct lifecycles, not one
-// generic status machine.
-func lifecycle(events []event.Event, proj Projection, target event.Event) string {
-	switch target.Type {
-	case event.KindDecision:
-		if containsEvent(proj.Decisions, target.ID) {
-			return "active"
-		}
-		for _, ev := range events {
-			if ev.Type == event.KindDecision && ev.Status == event.StatusPromoted && containsRef(ev.Refs, target.ID) {
-				return "promoted"
-			}
-		}
-		return "superseded"
-	case event.KindOpenItem:
-		if target.Status == event.StatusClosed {
-			return "resolution-marker"
-		}
-		if containsEvent(proj.OpenItems, target.ID) {
-			return "open"
-		}
-		return "closed"
-	case event.KindHandoff:
-		for _, stack := range proj.ResumeHandoffs {
-			if containsEvent(stack, target.ID) {
-				return "resumable"
-			}
-		}
-		if handoffConcluded(events, target) {
-			return "concluded"
-		}
-		at := sort.SearchStrings(proj.SupersededHandoffs, target.ID)
-		if at < len(proj.SupersededHandoffs) && proj.SupersededHandoffs[at] == target.ID {
-			return "superseded"
-		}
-		return "retired"
-	case event.KindNote:
-		return "recorded"
-	default:
-		return "unknown"
-	}
-}
-
-func handoffConcluded(events []event.Event, target event.Event) bool {
-	handoffs := make(map[string]event.Event)
-	for _, ev := range events {
-		if ev.Type == event.KindHandoff {
-			handoffs[ev.ID] = ev
-		}
-	}
-	for _, ev := range events {
-		if ev.Type != event.KindNote {
-			continue
-		}
-		for _, ref := range ev.Refs {
-			mark, ok := handoffs[ref]
-			if ok && mark.Workstream == target.Workstream && mark.ID >= target.ID {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func containsEvent(events []event.Event, target string) bool {
-	for _, ev := range events {
-		if ev.ID == target {
-			return true
-		}
-	}
-	return false
-}
-
-func containsRef(refs []string, target string) bool {
-	for _, ref := range refs {
-		if ref == target {
-			return true
-		}
-	}
-	return false
 }

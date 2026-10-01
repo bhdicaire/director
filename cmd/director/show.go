@@ -57,21 +57,27 @@ func runShow(args []string) int {
 		return 1
 	}
 	// The fold is what knows whether the record is still live, so it runs over
-	// the same set the lookup scans and hands formatEvent the one derived fact
-	// the as-recorded print cannot carry.
-	retired := render.Fold(events).Retired
+	// the same set the lookup scans. Both outputs take the event's lifecycle
+	// from render.LifecycleOf, which is what keeps the text line and the JSON
+	// value one vocabulary.
+	proj := render.Fold(events)
 	for _, ev := range events {
 		if ev.ID == target {
 			if jsonOutput {
-				out, err := render.ShowJSON(events, render.Fold(events), repoKey, ev)
+				out, err := render.ShowJSON(proj, repoKey, ev)
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "show: encode JSON: %v\n", err)
+					fmt.Fprintf(os.Stderr, "show: %v\n", err)
 					return 1
 				}
 				fmt.Print(string(out))
 				return 0
 			}
-			fmt.Print(formatEvent(ev, retired[ev.ID]))
+			lc, err := render.LifecycleOf(proj, ev)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "show: %v\n", err)
+				return 1
+			}
+			fmt.Print(formatEvent(ev, lc.Retirement))
 			return 0
 		}
 	}
@@ -86,7 +92,8 @@ func runShow(args []string) int {
 // one derived addition is the trailing `lifecycle:` line, which the fold (not
 // this function) decides: it is what corrects the recorded status for a reader
 // who followed a pointer here, and it is absent for an active event, whose
-// output is byte-for-byte the as-recorded record.
+// output is byte-for-byte the as-recorded record. Its verb is the lifecycle
+// string `show --json` carries for the same event.
 func formatEvent(ev event.Event, retirement render.Retirement) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s %s", ev.ID, ev.Type)
