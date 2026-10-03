@@ -21,6 +21,7 @@ Two kinds of documents live here, and the distinction is deliberate (it mirrors 
 - [`specs/2026-08-26-handoff-supersession-design.md`](specs/2026-08-26-handoff-supersession-design.md), the explicit handoff-supersession design (refs-scoped position retirement; parallel positions stack).
 - [`specs/2026-09-09-triage-ceremony-design.md`](specs/2026-09-09-triage-ceremony-design.md), the triage ceremony design (`/director:triage`: the open-set outlet; DONE/MIGRATE/DROP/KEEP routed by kind of fact; unbuilt, under review).
 - [`specs/2026-09-11-peer-chat-design.md`](specs/2026-09-11-peer-chat-design.md), the Parley design (peer chat: models collaborating over a chat stream one layer above the ledger; stream-with-cursor primitive, per-harness native delivery, the promotion protocol; sibling project `parley`, unbuilt, draft).
+- [`specs/2026-10-03-workspace-mode-design.md`](specs/2026-10-03-workspace-mode-design.md), the workspace-mode proposal (routing events to the repo they concern when one session spans several; manifest, emit routing, `director move`), not implemented
 - [`plans/2026-06-08-director-v1.md`](plans/2026-06-08-director-v1.md), the v1 build plan as executed.
 - [`review-2026-06-08-director-v1.md`](review-2026-06-08-director-v1.md), the v1 pre-merge review, findings and resolutions.
 - [`dogfood.md`](dogfood.md), the pre-code validation exercise (superseded before v1 shipped).
